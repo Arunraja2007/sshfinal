@@ -273,3 +273,25 @@ export async function fetchFilterOptions(house: 'Lok Sabha' | 'Rajya Sabha' = 'L
 
   return { states, districts, constituencies, categories, years, statuses };
 }
+
+export async function fetchProjectExecutionDetails(workId: string, house: string = 'Lok Sabha') {
+  const cleanId = workId.trim();
+  const [evidenceRes, updatesRes] = await Promise.all([
+    supabase
+      .from('execution_evidence')
+      .select('*')
+      .eq('work_id', cleanId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('execution_updates')
+      .select('*')
+      .eq('work_id', cleanId)
+      .order('submitted_at', { ascending: false }),
+  ]);
+
+  return {
+    evidence: evidenceRes.data || [],
+    updates: updatesRes.data || [],
+  };
+}
+

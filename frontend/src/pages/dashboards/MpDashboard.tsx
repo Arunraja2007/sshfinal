@@ -4,13 +4,16 @@ import { useAppStore } from '../../store/store';
 import { 
   UserCheck, AlertTriangle, CheckCircle2, Clock, DollarSign, 
   FileText, ShieldAlert, ArrowUpRight, Search, Landmark, 
-  Award, User, Filter, RefreshCw, ChevronLeft, ChevronRight
+  Award, User, Filter, RefreshCw, ChevronLeft, ChevronRight,
+  Camera, Edit3, Flag
 } from 'lucide-react';
 import { formatCurrency } from '../../utils';
 import { MpService } from '../../services/mpService';
 import type { MpDashboardMetrics } from '../../types/mp';
 import type { EnrichedProject } from '../../types';
 import { MpAvatar } from '../../components/MpAvatar';
+import { getMpParty, getPartyInfo } from '../../services/mpPartyService';
+import { EditMpProfileModal } from '../../components/EditMpProfileModal';
 
 export function MpDashboard() {
   const { profile } = useAuthStore();
@@ -24,6 +27,8 @@ export function MpDashboard() {
   const [metrics, setMetrics] = useState<MpDashboardMetrics | null>(null);
   const [attentionWorks, setAttentionWorks] = useState<EnrichedProject[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [mpParty, setMpPartyState] = useState(() => getMpParty(profile?.mp_name || profile?.id || profile?.full_name));
 
   // Projects table state
   const [projects, setProjects] = useState<EnrichedProject[]>([]);
@@ -40,6 +45,16 @@ export function MpDashboard() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [riskFilter, setRiskFilter] = useState('ALL');
   const [tabFilter, setTabFilter] = useState<'all' | 'attention' | 'ongoing' | 'completed'>('all');
+
+  useEffect(() => {
+    const handlePartyUpdated = () => {
+      setMpPartyState(getMpParty(profile?.mp_name || profile?.id || profile?.full_name));
+    };
+    window.addEventListener('mp-party-updated', handlePartyUpdated);
+    return () => window.removeEventListener('mp-party-updated', handlePartyUpdated);
+  }, [profile]);
+
+  const partyInfo = getPartyInfo(mpParty);
 
   const navigateTo = (path: string, pageId?: string) => {
     if (pageId) {
@@ -122,17 +137,43 @@ export function MpDashboard() {
 
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
           <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-            <MpAvatar
-              name={mpName}
-              id={profile?.mp_id || profile?.id}
-              photoUrl={profile?.photo_url}
-              size="2xl"
-              className="ring-4 ring-emerald-400/40 shadow-xl rounded-full bg-slate-900"
-            />
+            <div 
+              className="relative group cursor-pointer shrink-0" 
+              onClick={() => setIsEditModalOpen(true)}
+              title="Click to update photo or party"
+            >
+              <MpAvatar
+                name={mpName}
+                id={profile?.mp_id || profile?.id}
+                photoUrl={profile?.photo_url}
+                size="2xl"
+                className="ring-4 ring-emerald-400/40 shadow-xl rounded-full bg-slate-900 transition-transform group-hover:scale-105"
+              />
+              <div className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold">
+                <Camera className="w-5 h-5 mb-0.5 text-emerald-400" />
+                <span>Edit Photo</span>
+              </div>
+            </div>
+
             <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400 tracking-wider uppercase">
-                <Landmark className="w-4 h-4" />
-                <span>{house} &bull; {state}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 tracking-wider uppercase">
+                  <Landmark className="w-4 h-4" />
+                  <span>{house} &bull; {state}</span>
+                </div>
+                {partyInfo && (
+                  <span 
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border shadow-xs"
+                    style={{
+                      backgroundColor: partyInfo.bgColor,
+                      borderColor: partyInfo.borderColor,
+                      color: partyInfo.color,
+                    }}
+                  >
+                    <Flag className="w-3 h-3" />
+                    <span>{partyInfo.name}</span>
+                  </span>
+                )}
               </div>
               <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
                 Hon&apos;ble MP: {mpName}
@@ -151,6 +192,16 @@ export function MpDashboard() {
                 <span className="text-[11px] text-slate-400 font-normal">of sanctioned</span>
               </div>
             </div>
+
+            {/* Edit Photo & Party CTA */}
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold backdrop-blur-sm transition-all cursor-pointer shadow-sm"
+              title="Change MP photo or party name"
+            >
+              <Edit3 className="w-4 h-4 text-emerald-400" />
+              <span>Edit Photo &amp; Party</span>
+            </button>
 
             {/* View Profile Dossier CTA */}
             <button
@@ -480,6 +531,28 @@ export function MpDashboard() {
           </div>
         )}
       </div>
+
+      {/* MP Profile & Party Edit Modal */}
+      {isEditModalOpen && (
+        <EditMpProfileModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          mpProfile={{
+            id: profile?.id || '',
+            full_name: profile?.full_name || mpName,
+            mp_name: profile?.mp_name || mpName,
+            state: profile?.state || state,
+            constituency: profile?.constituency || constituency,
+            house: profile?.house || house,
+            photo_url: profile?.photo_url,
+            party: mpParty,
+            email: profile?.email,
+          }}
+          onSuccess={(updated) => {
+            if (updated.party) setMpPartyState(updated.party);
+          }}
+        />
+      )}
     </div>
   );
 }

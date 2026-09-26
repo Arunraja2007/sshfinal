@@ -12,6 +12,7 @@ import {
   RefreshCw, AlertCircle, ShieldCheck
 } from 'lucide-react';
 import { OfficialFilterBar, OfficialFilterState } from '../components/OfficialFilterBar';
+import { CategoryRiskDistribution } from '../components/CategoryRiskDistribution';
 import { getAnalyticsObservatory, AnalyticsObservatoryData } from '../services/analyticsService';
 
 const STATUS_COLOR_MAP: Record<string, string> = {
@@ -485,55 +486,27 @@ export function Analytics() {
           </div>
         </div>
 
-        {/* Chart 3: Risk by Category */}
-        <div className="panel p-5 flex flex-col h-[380px]">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-xs font-bold text-[#000a1f] flex items-center gap-1.5">
-              <Layers size={14} className="text-[#005eb2]" />
-              Risk Distribution by Work Category (Top 8)
-            </div>
-            <span className="text-[10px] text-[#747780]">Stacked by Risk Level</span>
-          </div>
-          <div className="flex-1 w-full mt-2 flex flex-col justify-center">
-            {loading && !observatoryData ? (
-              <div className="flex flex-col items-center justify-center h-full text-[#747780] text-xs">
-                <RefreshCw size={20} className="animate-spin text-[#005eb2] mb-2" />
-                <span>Aggregating category distribution…</span>
-              </div>
-            ) : categoryData.length === 0 ? (
-              <div className="flex-1 w-full flex flex-col items-center justify-center p-6 text-center text-[#747780] text-xs">
-                No category data available for the active selection.
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={categoryData} layout="vertical" margin={{ top: 5, right: 10, left: 25, bottom: 5 }}>
-                  <XAxis type="number" stroke="#c4c6d0" fontSize={10} tick={{ fill: '#44474f' }} />
-                  <YAxis
-                    dataKey="category"
-                    type="category"
-                    stroke="#c4c6d0"
-                    fontSize={9}
-                    width={140}
-                    tick={{ fill: '#44474f' }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: '#ffffff',
-                      border: '1px solid #E9ECEF',
-                      borderRadius: '4px',
-                      color: '#141d23',
-                      fontSize: '11px',
-                      boxShadow: '0 4px 16px rgba(0,10,31,0.1)',
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '5px', color: '#44474f' }} />
-                  <Bar dataKey="high" name="High Risk" stackId="a" fill="#DC3545" />
-                  <Bar dataKey="med" name="Medium Risk" stackId="a" fill="#FFC107" />
-                  <Bar dataKey="low" name="Low Risk" stackId="a" fill="#198754" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
+        {/* Chart 3: Risk Score by Work Category */}
+        <div className="lg:col-span-2">
+          <CategoryRiskDistribution
+            data={categoryData}
+            loading={loading && !observatoryData}
+            title="Risk Score by Work Category"
+            subtitle="Sectoral risk score benchmarking (0–100 scale) and vulnerability index across infrastructure categories."
+            scopeLabel={
+              cleanDistrict
+                ? `District: ${cleanDistrict}`
+                : filters.state
+                ? `State: ${filters.state}`
+                : filters.mpName
+                ? `MP: ${filters.mpName}`
+                : 'National Scope'
+            }
+            onSelectCategory={(cat) => {
+              setFilters(f => ({ ...f, category: cat }));
+            }}
+            selectedCategory={filters.category}
+          />
         </div>
 
         {/* Chart 4: Work Status Breakdown */}

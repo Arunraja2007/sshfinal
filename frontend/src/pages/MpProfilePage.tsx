@@ -5,6 +5,8 @@ import { MpService } from '../services/mpService';
 import type { MpProfileResponse } from '../types/mp';
 import { formatCurrency } from '../utils';
 import { MpAvatar } from '../components/MpAvatar';
+import { getMpParty, getPartyInfo } from '../services/mpPartyService';
+import { EditMpProfileModal } from '../components/EditMpProfileModal';
 import {
   Landmark,
   ShieldAlert,
@@ -23,6 +25,9 @@ import {
   Building,
   TrendingUp,
   ChevronRight,
+  Camera,
+  Edit3,
+  Flag,
 } from 'lucide-react';
 
 export function MpProfilePage() {
@@ -32,6 +37,16 @@ export function MpProfilePage() {
   const [data, setData] = useState<MpProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [mpParty, setMpPartyState] = useState(() => getMpParty(profile?.mp_name || profile?.id || profile?.full_name));
+
+  useEffect(() => {
+    const handlePartyUpdated = () => {
+      setMpPartyState(getMpParty(profile?.mp_name || profile?.id || profile?.full_name));
+    };
+    window.addEventListener('mp-party-updated', handlePartyUpdated);
+    return () => window.removeEventListener('mp-party-updated', handlePartyUpdated);
+  }, [profile]);
 
   useEffect(() => {
     async function loadProfile() {
@@ -119,15 +134,23 @@ export function MpProfilePage() {
 
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
-            {/* MP Portrait with clean fallback */}
-            <div className="relative">
+            {/* MP Portrait with clean fallback and edit overlay */}
+            <div 
+              className="relative group cursor-pointer shrink-0"
+              onClick={() => setIsEditModalOpen(true)}
+              title="Click to update photo or party"
+            >
               <MpAvatar
                 name={mpInfo.mpName}
                 id={mpInfo.mpId}
                 photoUrl={mpInfo.photoUrl}
                 size="2xl"
-                className="ring-4 ring-emerald-400/40 shadow-2xl rounded-full bg-slate-900"
+                className="ring-4 ring-emerald-400/40 shadow-2xl rounded-full bg-slate-900 transition-transform group-hover:scale-105"
               />
+              <div className="absolute inset-0 rounded-full bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold">
+                <Camera className="w-5 h-5 mb-0.5 text-emerald-400" />
+                <span>Edit</span>
+              </div>
               <span className="absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full bg-emerald-600 text-[10px] font-bold tracking-wider text-white uppercase border border-emerald-400/50 shadow">
                 LS
               </span>
@@ -144,6 +167,22 @@ export function MpProfilePage() {
                   <MapPin className="w-3 h-3 text-emerald-400" />
                   {mpInfo.state}
                 </span>
+                {(() => {
+                  const pInfo = getPartyInfo(mpParty);
+                  return (
+                    <span
+                      className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border shadow-xs"
+                      style={{
+                        backgroundColor: pInfo.bgColor,
+                        borderColor: pInfo.borderColor,
+                        color: pInfo.color,
+                      }}
+                    >
+                      <Flag className="w-3 h-3" />
+                      <span>{pInfo.name}</span>
+                    </span>
+                  );
+                })()}
               </div>
 
               <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
@@ -180,16 +219,27 @@ export function MpProfilePage() {
               <div className="text-[10px] text-slate-400">Standard Scheme Entitlement</div>
             </div>
 
-            <button
-              onClick={() => {
-                selectProject(null);
-                navigateTo('/monitoring', 'monitoring');
-              }}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-900/40 transition-all cursor-pointer"
-            >
-              <span>Explore All Works</span>
-              <ArrowUpRight className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsEditModalOpen(true)}
+                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold backdrop-blur-sm transition-all cursor-pointer shadow-sm"
+                title="Change MP photo or party name"
+              >
+                <Edit3 className="w-4 h-4 text-emerald-400" />
+                <span>Edit Photo &amp; Party</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  selectProject(null);
+                  navigateTo('/monitoring', 'monitoring');
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-lg shadow-emerald-900/40 transition-all cursor-pointer"
+              >
+                <span>Explore All Works</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -502,6 +552,38 @@ export function MpProfilePage() {
           </table>
         </div>
       </div>
+
+      {/* MP Profile & Party Edit Modal */}
+      {isEditModalOpen && (
+        <EditMpProfileModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          mpProfile={{
+            id: mpInfo.mpId || profile?.id || '',
+            full_name: mpInfo.mpName || profile?.full_name || '',
+            mp_name: mpInfo.mpName,
+            state: mpInfo.state || profile?.state,
+            constituency: mpInfo.constituency || profile?.constituency,
+            house: mpInfo.house || profile?.house,
+            photo_url: mpInfo.photoUrl || profile?.photo_url,
+            party: mpParty,
+            email: mpInfo.email || profile?.email,
+          }}
+          onSuccess={(updated) => {
+            if (updated.party) setMpPartyState(updated.party);
+            if (data && updated.photo_url) {
+              setData({
+                ...data,
+                mpInfo: {
+                  ...data.mpInfo,
+                  photoUrl: updated.photo_url,
+                  mpName: updated.full_name || data.mpInfo.mpName,
+                }
+              });
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

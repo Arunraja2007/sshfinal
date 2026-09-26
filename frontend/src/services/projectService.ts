@@ -460,3 +460,69 @@ export async function updateProjectVerification(
   saveVerificationOverride(workId, { status, history: [event] });
   return true;
 }
+
+export interface ProjectExecutionEvidenceItem {
+  id: string;
+  work_id: string;
+  house: string;
+  file_name: string;
+  file_type: string;
+  storage_path: string;
+  description?: string;
+  file_size_bytes?: number;
+  created_at: string;
+  uploaded_by?: string;
+  agency_name?: string;
+}
+
+export interface ProjectExecutionUpdateItem {
+  id: string;
+  work_id: string;
+  house: string;
+  physical_progress: number;
+  milestone_status: string;
+  update_date: string;
+  remarks: string;
+  delay_reason?: string;
+  expected_completion_date?: string;
+  review_status?: string;
+  agency_name?: string;
+  submitted_at: string;
+}
+
+export interface ProjectEvidenceAndUpdates {
+  evidence: ProjectExecutionEvidenceItem[];
+  updates: ProjectExecutionUpdateItem[];
+}
+
+export async function getProjectExecutionEvidence(
+  workId: string,
+  house: 'Lok Sabha' | 'Rajya Sabha' = 'Lok Sabha'
+): Promise<ProjectEvidenceAndUpdates> {
+  const cleanId = workId.trim();
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(cleanId)}/execution-details?house=${encodeURIComponent(house)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        return json.data;
+      }
+    }
+  } catch (_) {}
+
+  try {
+    const [evRes, upRes] = await Promise.all([
+      supabase.from('execution_evidence').select('*').eq('work_id', cleanId).order('created_at', { ascending: false }),
+      supabase.from('execution_updates').select('*').eq('work_id', cleanId).order('submitted_at', { ascending: false }),
+    ]);
+
+    return {
+      evidence: (evRes.data || []) as ProjectExecutionEvidenceItem[],
+      updates: (upRes.data || []) as ProjectExecutionUpdateItem[],
+    };
+  } catch (err) {
+    console.warn('Could not fetch project execution evidence:', err);
+    return { evidence: [], updates: [] };
+  }
+}
+

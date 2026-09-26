@@ -132,6 +132,31 @@ export function PublicComplaintPage({ initialWorkId, onNavigate }: PublicComplai
       });
 
       setResult(submitRes);
+
+      // Attach evidence document / photo proof if citizen uploaded a file
+      if (selectedFile) {
+        try {
+          const reader = new FileReader();
+          const fileDataPromise = new Promise<string>((resolve) => {
+            reader.onload = () => resolve((reader.result as string) || '');
+            reader.onerror = () => resolve('');
+          });
+          reader.readAsDataURL(selectedFile);
+          const dataUrl = await fileDataPromise;
+          if (dataUrl) {
+            await PublicService.attachEvidence(submitRes.complaintId, {
+              fileName: selectedFile.name,
+              fileType: selectedFile.type || (selectedFile.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
+              fileSize: selectedFile.size,
+              storagePath: dataUrl,
+              description: `Citizen photo/document evidence for complaint regarding project ${workId.trim()}`,
+              uploadedBy: complainantName.trim() || 'Citizen Complainant',
+            });
+          }
+        } catch (attachErr) {
+          console.warn('[PublicComplaintPage] Failed to attach evidence:', attachErr);
+        }
+      }
     } catch (err: any) {
       console.error('Submission failed:', err);
       setFormError(err.message || 'Failed to submit complaint. Please check your inputs and try again.');

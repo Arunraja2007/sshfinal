@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Activity, ShieldCheck, Lock, Mail, ArrowRight, AlertCircle, Sparkles, Search } from 'lucide-react';
+import { Activity, ShieldCheck, Lock, Mail, ArrowRight, AlertCircle, Sparkles, Search, Eye, EyeOff } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import demoAccounts from '../data/demoAccounts.json';
 
@@ -10,6 +10,7 @@ interface LoginPageProps {
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState<'admin' | 'agencies' | 'mps'>('admin');
   const [mpSearch, setMpSearch] = useState('');
   const { login, isLoading, authError } = useAuthStore();
@@ -131,13 +132,22 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 <div className="relative">
                   <Lock size={15} className="absolute left-3 top-3 text-[#747780]" />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
-                    className="w-full pl-9 pr-3 py-2 text-xs border border-[#CED4DA] rounded-sm focus:border-[#00204a] focus:ring-1 focus:ring-[#00204a] outline-none font-mono"
+                    className="w-full pl-9 pr-10 py-2 text-xs border border-[#CED4DA] rounded-sm focus:border-[#00204a] focus:ring-1 focus:ring-[#00204a] outline-none font-mono"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(prev => !prev)}
+                    className="absolute right-3 top-2.5 text-[#747780] hover:text-[#00204a] p-0.5 rounded focus:outline-none cursor-pointer transition-colors"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
                 </div>
               </div>
 

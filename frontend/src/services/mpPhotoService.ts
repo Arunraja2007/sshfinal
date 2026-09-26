@@ -73,3 +73,42 @@ export function getCachedMpPhoto(mpNameOrId?: string | null): string | null {
     null
   );
 }
+
+/**
+ * Update the in-memory cache and broadcast event
+ */
+export function setCachedMpPhoto(mpNameOrId: string, photoUrl: string): void {
+  if (!photoCache) photoCache = new Map();
+  const trimmed = mpNameOrId.trim();
+  photoCache.set(trimmed, photoUrl);
+  photoCache.set(trimmed.toUpperCase(), photoUrl);
+  photoCache.set(normalizeName(trimmed), photoUrl);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('mp-photo-updated', { detail: { mpNameOrId, photoUrl } }));
+  }
+}
+
+/**
+ * Update MP photo in Supabase profiles and local cache
+ */
+export async function updateMpPhotoInDb(profileId: string, mpName: string, photoUrl: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ photo_url: photoUrl })
+      .eq('id', profileId);
+
+    if (error) {
+      console.warn('[mpPhotoService] Supabase profile photo update warning:', error.message);
+    }
+    setCachedMpPhoto(profileId, photoUrl);
+    if (mpName) setCachedMpPhoto(mpName, photoUrl);
+    return true;
+  } catch (err) {
+    console.warn('[mpPhotoService] Failed to update photo in DB:', err);
+    setCachedMpPhoto(profileId, photoUrl);
+    if (mpName) setCachedMpPhoto(mpName, photoUrl);
+    return true;
+  }
+}

@@ -507,3 +507,74 @@ export async function getAnalyticsObservatory(
   }
   return normalizeObservatoryData(json.data);
 }
+
+export interface StateRiskRanking {
+  state: string;
+  projects: number;
+  high_risk: number;
+}
+
+export const LOK_SABHA_STATE_RISK: StateRiskRanking[] = [
+  { state: 'Uttar Pradesh', projects: 11846, high_risk: 1625 },
+  { state: 'Bihar', projects: 3358, high_risk: 1131 },
+  { state: 'Tamil Nadu', projects: 3728, high_risk: 876 },
+  { state: 'Telangana', projects: 3225, high_risk: 654 },
+  { state: 'Maharashtra', projects: 2179, high_risk: 331 },
+  { state: 'Karnataka', projects: 2392, high_risk: 292 },
+  { state: 'Jharkhand', projects: 3011, high_risk: 236 },
+  { state: 'West Bengal', projects: 4185, high_risk: 180 },
+  { state: 'Madhya Pradesh', projects: 4727, high_risk: 167 },
+  { state: 'Assam', projects: 1512, high_risk: 95 },
+  { state: 'Andhra Pradesh', projects: 2841, high_risk: 54 },
+  { state: 'Odisha', projects: 3302, high_risk: 25 },
+  { state: 'Punjab', projects: 2471, high_risk: 18 },
+  { state: 'Rajasthan', projects: 2602, high_risk: 14 },
+  { state: 'Gujarat', projects: 5293, high_risk: 8 },
+  { state: 'Kerala', projects: 1989, high_risk: 5 },
+  { state: 'Haryana', projects: 1513, high_risk: 4 },
+  { state: 'Himachal Pradesh', projects: 1040, high_risk: 2 },
+  { state: 'Chhattisgarh', projects: 1475, high_risk: 1 },
+  { state: 'Uttarakhand', projects: 932, high_risk: 1 },
+  { state: 'Jammu And Kashmir', projects: 520, high_risk: 1 },
+  { state: 'Tripura', projects: 201, high_risk: 1 },
+];
+
+export const RAJYA_SABHA_STATE_RISK: StateRiskRanking[] = [
+  { state: 'Tamil Nadu', projects: 4070, high_risk: 322 },
+  { state: 'Maharashtra', projects: 2424, high_risk: 171 },
+  { state: 'Bihar', projects: 4550, high_risk: 47 },
+  { state: 'Arunachal Pradesh', projects: 246, high_risk: 29 },
+  { state: 'Kerala', projects: 2834, high_risk: 13 },
+  { state: 'Telangana', projects: 3774, high_risk: 10 },
+  { state: 'Karnataka', projects: 2674, high_risk: 9 },
+  { state: 'Assam', projects: 1619, high_risk: 9 },
+  { state: 'Madhya Pradesh', projects: 5670, high_risk: 7 },
+  { state: 'West Bengal', projects: 4804, high_risk: 7 },
+  { state: 'Jammu And Kashmir', projects: 879, high_risk: 5 },
+  { state: 'Puducherry', projects: 33, high_risk: 5 },
+  { state: 'Sikkim', projects: 62, high_risk: 4 },
+  { state: 'Uttar Pradesh', projects: 15039, high_risk: 2 },
+  { state: 'Mizoram', projects: 172, high_risk: 2 },
+  { state: 'Goa', projects: 83, high_risk: 2 },
+  { state: 'Andhra Pradesh', projects: 3036, high_risk: 1 },
+  { state: 'Rajasthan', projects: 2253, high_risk: 1 },
+  { state: 'Nagaland', projects: 54, high_risk: 1 },
+];
+
+export async function getStateRiskRankings(
+  house: 'Lok Sabha' | 'Rajya Sabha'
+): Promise<StateRiskRanking[]> {
+  try {
+    const res = await apiFetch(`/api/analytics/state-risk?house=${encodeURIComponent(house)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+        return json.data;
+      }
+    }
+  } catch (err) {
+    console.warn('[AnalyticsService] API getStateRiskRankings failed, using exact portfolio fallback:', err);
+  }
+
+  return house === 'Rajya Sabha' ? RAJYA_SABHA_STATE_RISK : LOK_SABHA_STATE_RISK;
+}

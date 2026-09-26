@@ -17,7 +17,7 @@ import { optionalAuth } from './middleware/auth.middleware.js';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
@@ -29,6 +29,7 @@ app.get(['/health', '/api/health'], (req, res) => {
   res.json({
     status: 'ok',
     service: 'MPLADS Sentinel API',
+    
     timestamp: new Date().toISOString(),
   });
 });

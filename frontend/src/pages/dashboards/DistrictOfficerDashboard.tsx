@@ -7,14 +7,20 @@ import {
   Search, Building2, User, ChevronRight, AlertCircle,
   ExternalLink, FileText, CheckCircle, ArrowLeftRight,
   Filter, Clock, ShieldAlert, Eye, DollarSign,
-  Paperclip, Upload, Trash2
+  Paperclip, Upload, Trash2, Camera, Image as ImageIcon,
+  Maximize2, Download, ZoomIn, Check, Info
 } from 'lucide-react';
 import { formatCurrency } from '../../utils';
 import {
   getDistrictOfficerOverview,
   type DistrictOfficerOverview,
-  updateProjectVerification
+  updateProjectVerification,
+  getProjectExecutionEvidence,
+  type ProjectExecutionEvidenceItem,
+  type ProjectExecutionUpdateItem
 } from '../../services/projectService';
+import { getAnalyticsObservatory } from '../../services/analyticsService';
+import { CategoryRiskDistribution, type WorkCategoryRiskItem } from '../../components/CategoryRiskDistribution';
 import { PublicService } from '../../services/publicService';
 import type { DistrictComplaintItem, ComplaintEvent } from '../../types/public';
 import type { VerificationStatus } from '../../types';
@@ -40,6 +46,10 @@ export function DistrictOfficerDashboard() {
   const [queueSearch, setQueueSearch] = useState<string>('');
   const [repSearch, setRepSearch] = useState<string>('');
   const [viewMode, setViewMode] = useState<'overview' | 'comparative' | 'grievances'>('overview');
+
+  // Category Risk Distribution State
+  const [categoryData, setCategoryData] = useState<WorkCategoryRiskItem[]>([]);
+  const [categoryLoading, setCategoryLoading] = useState<boolean>(false);
 
   // Inspection Modal State
   const [inspectingWork, setInspectingWork] = useState<any | null>(null);
@@ -81,6 +91,29 @@ export function DistrictOfficerDashboard() {
   } | null>(null);
   const [evidenceDescription, setEvidenceDescription] = useState<string>('');
 
+  // Project Inspection & Evidence Modal State
+  const [inspectingWorkEvidence, setInspectingWorkEvidence] = useState<ProjectExecutionEvidenceItem[]>([]);
+  const [inspectingWorkUpdates, setInspectingWorkUpdates] = useState<ProjectExecutionUpdateItem[]>([]);
+  const [inspectingWorkComplaints, setInspectingWorkComplaints] = useState<DistrictComplaintItem[]>([]);
+  const [inspectingLoadingEvidence, setInspectingLoadingEvidence] = useState<boolean>(false);
+  const [inspectingTab, setInspectingTab] = useState<'evidence' | 'updates' | 'complaints' | 'action'>('evidence');
+
+  // Cross-Check & Grievance Proofs Tab State
+  const [complaintProofsTab, setComplaintProofsTab] = useState<'citizen' | 'agency' | 'timeline' | 'action'>('citizen');
+  const [complaintAgencyEvidence, setComplaintAgencyEvidence] = useState<ProjectExecutionEvidenceItem[]>([]);
+  const [complaintAgencyUpdates, setComplaintAgencyUpdates] = useState<ProjectExecutionUpdateItem[]>([]);
+  const [complaintAgencyLoading, setComplaintAgencyLoading] = useState<boolean>(false);
+
+  // Full-Screen Image / Lightbox Modal State
+  const [lightboxMedia, setLightboxMedia] = useState<{
+    url: string;
+    title: string;
+    subtitle?: string;
+    date?: string;
+    uploader?: string;
+    isPdf?: boolean;
+  } | null>(null);
+
   const loadData = async (targetHouse: 'Lok Sabha' | 'Rajya Sabha') => {
     setLoading(true);
     setError(null);
@@ -96,6 +129,21 @@ export function DistrictOfficerDashboard() {
       setError(err?.message || 'Failed to load district dashboard data');
     } finally {
       setLoading(false);
+    }
+
+    setCategoryLoading(true);
+    try {
+      const obs = await getAnalyticsObservatory(targetHouse, {
+        state: assignedState,
+        district: assignedDistrictRaw,
+      });
+      if (obs && Array.isArray(obs.categoryRisk)) {
+        setCategoryData(obs.categoryRisk);
+      }
+    } catch (catErr) {
+      console.warn('Error fetching district category risk:', catErr);
+    } finally {
+      setCategoryLoading(false);
     }
   };
 
@@ -131,6 +179,28 @@ export function DistrictOfficerDashboard() {
     reader.readAsDataURL(file);
   };
 
+  const handleOpenInspectWork = async (item: any) => {
+    setInspectingWork(item);
+    setVerificationStatus((item.verification_status as VerificationStatus) || 'Under Review');
+    setVerificationComment('');
+    setInspectingTab('evidence');
+    setInspectingLoadingEvidence(true);
+    try {
+      const details = await getProjectExecutionEvidence(item.work_id, house);
+      setInspectingWorkEvidence(details.evidence || []);
+      setInspectingWorkUpdates(details.updates || []);
+      const relatedComplaints = complaints.filter(c => c.workId === item.work_id);
+      setInspectingWorkComplaints(relatedComplaints);
+    } catch (err) {
+      console.warn('Failed to load project execution evidence:', err);
+      setInspectingWorkEvidence([]);
+      setInspectingWorkUpdates([]);
+      setInspectingWorkComplaints([]);
+    } finally {
+      setInspectingLoadingEvidence(false);
+    }
+  };
+
   const handleOpenComplaintReview = async (c: DistrictComplaintItem) => {
     setSelectedComplaint(c);
     setComplaintStatusInput(c.status);
@@ -140,6 +210,7 @@ export function DistrictOfficerDashboard() {
     setActionPublicResponse('');
     setAttachedFile(null);
     setEvidenceDescription('');
+    setComplaintProofsTab('citizen');
     setSelectedAction(
       c.status === 'SUBMITTED' ? 'START_REVIEW' :
       c.status === 'UNDER REVIEW' ? 'REQUEST_CLARIFICATION' :
@@ -147,19 +218,26 @@ export function DistrictOfficerDashboard() {
       c.status === 'ACTION IN PROGRESS' ? 'RESOLVE' : 'RESOLVE'
     );
     setTimelineLoading(true);
+    setComplaintAgencyLoading(true);
     try {
-      const [events, evidence] = await Promise.all([
+      const [events, evidence, agencyDetails] = await Promise.all([
         PublicService.getComplaintTimeline(c.complaintId, false),
         PublicService.getEvidence(c.complaintId).catch(() => []),
+        getProjectExecutionEvidence(c.workId, house).catch(() => ({ evidence: [], updates: [] })),
       ]);
       setComplaintTimeline(events);
       setComplaintEvidenceList(evidence);
+      setComplaintAgencyEvidence(agencyDetails.evidence || []);
+      setComplaintAgencyUpdates(agencyDetails.updates || []);
     } catch (err) {
       console.warn('Could not load complaint events/evidence:', err);
       setComplaintTimeline([]);
       setComplaintEvidenceList([]);
+      setComplaintAgencyEvidence([]);
+      setComplaintAgencyUpdates([]);
     } finally {
       setTimelineLoading(false);
+      setComplaintAgencyLoading(false);
     }
   };
 
@@ -300,7 +378,7 @@ export function DistrictOfficerDashboard() {
   }, [overview?.mps, repSearch]);
 
   // Drilldown helper
-  const handleDrilldown = (opts: { constituency?: string; mpName?: string; riskLevel?: string }) => {
+  const handleDrilldown = (opts: { constituency?: string; mpName?: string; riskLevel?: string; category?: string }) => {
     setActiveHouse(house);
     setFilters({
       state: assignedState,
@@ -308,6 +386,7 @@ export function DistrictOfficerDashboard() {
       constituency: opts.constituency || '',
       mpName: opts.mpName || '',
       riskLevel: opts.riskLevel || '',
+      category: opts.category || '',
     });
     setCurrentPage('monitoring');
     window.history.pushState({}, '', '/monitoring');
@@ -850,14 +929,12 @@ export function DistrictOfficerDashboard() {
                         <td className="py-3 px-3 text-center">
                           <div className="flex items-center justify-center gap-1.5">
                             <button
-                              onClick={() => {
-                                setInspectingWork(item);
-                                setVerificationStatus((item.verification_status as VerificationStatus) || 'Under Review');
-                              }}
-                              className="px-2.5 py-1 bg-[#00204a] text-white rounded text-[10px] font-bold hover:bg-[#003366] transition-colors"
-                              title="Inspect and change verification status"
+                              onClick={() => handleOpenInspectWork(item)}
+                              className="px-2.5 py-1 bg-[#00204a] text-white rounded text-[10px] font-bold hover:bg-[#003366] transition-colors cursor-pointer flex items-center gap-1"
+                              title="Inspect project details and implementing agency photo proofs"
                             >
-                              Inspect
+                              <Camera size={11} />
+                              <span>Inspect & Proofs</span>
                             </button>
                             <button
                               onClick={() => handleOpenProject(item.work_id)}
@@ -1016,6 +1093,18 @@ export function DistrictOfficerDashboard() {
               </div>
             </div>
           </div>
+
+          {/* ── District Work Category Risk Score Analysis ── */}
+          <CategoryRiskDistribution
+            data={categoryData}
+            loading={categoryLoading}
+            title={`Risk Score by Work Category — ${assignedDistrictClean}`}
+            subtitle={`Sectoral risk score benchmarking (0–100 scale) and vulnerability diagnostics across ${assignedDistrictClean} district.`}
+            scopeLabel={`District: ${assignedDistrictClean}`}
+            onSelectCategory={(cat) => {
+              handleDrilldown({ category: cat });
+            }}
+          />
         </>
       ) : viewMode === 'comparative' ? (
         /* 6. Intra-District Constituency Comparative Intelligence */
@@ -1377,396 +1466,1168 @@ export function DistrictOfficerDashboard() {
         </div>
       )}
 
-      {/* 7. Citizen Complaint Review & Resolution Modal */}
+      {/* 7. Citizen Complaint Review & Resolution Modal with Citizen Proofs & Agency Cross-Check */}
       {selectedComplaint && (
-        <div className="fixed inset-0 z-50 bg-[#000a1f]/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-sm border border-[#CED4DA] shadow-2xl max-w-2xl w-full p-6 space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-[#E9ECEF] pb-3">
+        <div className="fixed inset-0 z-50 bg-[#000a1f]/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-md border border-[#CED4DA] shadow-2xl max-w-3xl w-full p-5 sm:p-6 space-y-4 my-6 animate-fade-in max-h-[92vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-[#E9ECEF] pb-3 flex-shrink-0">
               <div>
-                <span className="text-[10px] font-bold text-[#00204a] uppercase tracking-wider bg-[#EEF2F6] px-2 py-0.5 rounded">
-                  District Officer Grievance &amp; Workflow Desk
+                <span className="text-[10px] font-bold text-[#00204a] uppercase tracking-wider bg-[#EEF2F6] px-2.5 py-0.5 rounded border border-[#D5DCE4]">
+                  District Grievance &amp; Verification Desk
                 </span>
-                <h3 className="text-base font-bold text-[#000a1f] mt-1">
-                  Administrative Review &amp; Routing Action
+                <h3 className="text-base sm:text-lg font-bold text-[#000a1f] mt-1 flex items-center gap-2">
+                  <span>Grievance Dossier &amp; Proof Inspection</span>
                 </h3>
               </div>
               <button
                 onClick={() => setSelectedComplaint(null)}
-                className="text-[#ADB5BD] hover:text-[#000a1f] text-lg font-bold p-1 cursor-pointer"
+                className="text-[#ADB5BD] hover:text-[#000a1f] text-2xl font-bold p-1 cursor-pointer leading-none"
+                title="Close"
               >
                 &times;
               </button>
             </div>
 
-            {/* Case file context */}
-            <div className="bg-[#F8F9FA] p-3 rounded border border-[#E9ECEF] text-xs space-y-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <span className="text-[#6C757D]">Complaint ID: </span>
-                  <strong className="font-mono text-[#00204a]">{selectedComplaint.complaintId}</strong>
+            {/* Scrollable Content Body */}
+            <div className="overflow-y-auto pr-1 space-y-4 flex-1">
+              {/* Case file context */}
+              <div className="bg-[#F8F9FA] p-3.5 rounded border border-[#E9ECEF] text-xs space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#6C757D]">Complaint ID:</span>
+                    <strong className="font-mono text-[#00204a] bg-white px-2 py-0.5 rounded border border-[#CED4DA]">
+                      {selectedComplaint.complaintId}
+                    </strong>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#6C757D]">Work ID:</span>
+                    <strong className="font-mono text-[#005eb2] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      {selectedComplaint.workId}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[#6C757D] mr-1.5">Status:</span>
+                    <strong className="px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800 border border-blue-200">
+                      {selectedComplaint.status}
+                    </strong>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[#6C757D]">Work ID: </span>
-                  <strong className="font-mono text-[#005eb2]">{selectedComplaint.workId}</strong>
-                </div>
-                <div>
-                  <span className="text-[#6C757D]">Current Status: </span>
-                  <strong className="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase bg-blue-100 text-blue-800">
-                    {selectedComplaint.status}
-                  </strong>
-                </div>
-              </div>
-              <div>
-                <span className="text-[#6C757D]">Work Title: </span>
-                <span className="text-[#000a1f] font-semibold">{selectedComplaint.workDescription}</span>
-              </div>
-              <div className="p-2.5 bg-amber-50 rounded border border-amber-200 text-amber-950">
-                <span className="font-bold text-[10px] uppercase text-amber-900 block mb-0.5">Reported Citizen Concern ({selectedComplaint.category}):</span>
-                <p className="italic text-slate-800">"{selectedComplaint.description}"</p>
-              </div>
-              <button
-                onClick={() => {
-                  selectProject(selectedComplaint.workId);
-                  setCurrentPage('monitoring');
-                  window.history.pushState({}, '', '/monitoring');
-                  window.dispatchEvent(new PopStateEvent('popstate'));
-                }}
-                className="text-xs font-bold text-[#0066CC] hover:underline flex items-center gap-1 cursor-pointer pt-1"
-              >
-                <span>Inspect full project dossier in Project Intelligence</span>
-                <ExternalLink size={11} />
-              </button>
-            </div>
 
-            {/* Case History & Timeline */}
-            <div className="border border-[#E9ECEF] rounded p-3 bg-white space-y-2 max-h-48 overflow-y-auto">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase text-[#00204a] flex items-center gap-1">
-                  <Clock size={12} className="text-[#005eb2]" />
-                  <span>Administrative Dossier Timeline</span>
-                </span>
-                {timelineLoading && <span className="text-[10px] text-[#6C757D]">Refreshing timeline…</span>}
+                <div>
+                  <span className="text-[#6C757D] block mb-0.5">Work Description:</span>
+                  <span className="text-[#000a1f] font-bold text-xs">{selectedComplaint.workDescription}</span>
+                </div>
+
+                <div className="p-3 bg-amber-50 rounded border border-amber-200 text-amber-950">
+                  <div className="font-bold text-[10px] uppercase tracking-wider text-amber-900 flex items-center gap-1.5 mb-1">
+                    <AlertCircle size={12} />
+                    <span>Reported Citizen Concern ({selectedComplaint.category}):</span>
+                  </div>
+                  <p className="italic text-slate-800 text-xs">"{selectedComplaint.description}"</p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-600 bg-white p-2 rounded border border-[#E9ECEF]">
+                  <div>
+                    <span className="text-slate-400 font-semibold">Complainant: </span>
+                    <strong className="text-slate-800">{selectedComplaint.complainantName}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold">Contact: </span>
+                    <span className="font-mono text-slate-700">{selectedComplaint.complainantMobile || selectedComplaint.complainantEmail || 'Anonymous'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-semibold">Landmark: </span>
+                    <span className="text-slate-700">{selectedComplaint.locationLandmark || 'N/A'}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    onClick={() => {
+                      selectProject(selectedComplaint.workId);
+                      setCurrentPage('monitoring');
+                      window.history.pushState({}, '', '/monitoring');
+                      window.dispatchEvent(new PopStateEvent('popstate'));
+                    }}
+                    className="text-xs font-bold text-[#0066CC] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Open full project dossier in Project Intelligence</span>
+                    <ExternalLink size={11} />
+                  </button>
+                </div>
               </div>
-              {complaintTimeline.length === 0 ? (
-                <p className="text-[11px] text-[#6C757D] italic">No prior events recorded.</p>
-              ) : (
-                <div className="space-y-1.5 border-l-2 border-[#005eb2]/30 pl-3">
-                  {complaintTimeline.map((ev, i) => (
-                    <div key={ev.id || i} className="text-[11px] pb-1">
-                      <div className="flex items-center justify-between text-[10px] text-[#6C757D]">
-                        <span className="font-bold text-[#00204a]">{ev.eventType.replace(/_/g, ' ')} ({ev.status})</span>
-                        <span>{new Date(ev.createdAt).toLocaleString()}</span>
-                      </div>
-                      <div className="text-[10px] text-[#005eb2] font-medium">
-                        By {ev.actorRole} ({ev.actorName})
-                      </div>
-                      <p className="text-[#495057] bg-slate-50 p-1.5 rounded border border-slate-100 mt-0.5">
-                        {ev.remarks}
+
+              {/* Multi-Tab Navigation for Complaint Review */}
+              <div className="flex border-b border-[#DEE2E6] gap-2 sm:gap-4 text-xs font-bold overflow-x-auto pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => setComplaintProofsTab('citizen')}
+                  className={`pb-2 px-1 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    complaintProofsTab === 'citizen'
+                      ? 'border-b-2 border-[#00204a] text-[#00204a]'
+                      : 'text-[#6C757D] hover:text-[#00204a]'
+                  }`}
+                >
+                  <Camera size={14} className="text-[#005eb2]" />
+                  <span>Citizen Attached Proofs ({complaintEvidenceList.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setComplaintProofsTab('agency')}
+                  className={`pb-2 px-1 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    complaintProofsTab === 'agency'
+                      ? 'border-b-2 border-[#00204a] text-[#00204a]'
+                      : 'text-[#6C757D] hover:text-[#00204a]'
+                  }`}
+                >
+                  <Building2 size={14} className="text-emerald-700" />
+                  <span>Agency Project Proofs &amp; Field Photos ({complaintAgencyEvidence.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setComplaintProofsTab('timeline')}
+                  className={`pb-2 px-1 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    complaintProofsTab === 'timeline'
+                      ? 'border-b-2 border-[#00204a] text-[#00204a]'
+                      : 'text-[#6C757D] hover:text-[#00204a]'
+                  }`}
+                >
+                  <Clock size={14} className="text-purple-700" />
+                  <span>Dossier Timeline ({complaintTimeline.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setComplaintProofsTab('action')}
+                  className={`pb-2 px-1 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    complaintProofsTab === 'action'
+                      ? 'border-b-2 border-[#00204a] text-[#00204a]'
+                      : 'text-[#6C757D] hover:text-[#00204a]'
+                  }`}
+                >
+                  <ShieldCheck size={14} className="text-[#DC3545]" />
+                  <span>Execute Order</span>
+                </button>
+              </div>
+
+              {/* TAB 1: CITIZEN ATTACHED PROOFS */}
+              {complaintProofsTab === 'citizen' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider flex items-center gap-1.5">
+                        <Camera size={14} className="text-[#005eb2]" />
+                        <span>Proof &amp; Evidence Attached by Citizen</span>
+                      </h4>
+                      <p className="text-[11px] text-[#747780]">
+                        Photographs and documents submitted by the complainant to substantiate their grievance.
                       </p>
                     </div>
-                  ))}
+                  </div>
+
+                  {complaintEvidenceList.length === 0 ? (
+                    <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-dashed border-[#CED4DA] space-y-2">
+                      <ImageIcon size={28} className="mx-auto text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-700">No citizen attachments uploaded for this complaint.</p>
+                      <p className="text-[11px] text-slate-500">
+                        The complainant submitted a text grievance without attaching photo or document proof.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {complaintEvidenceList.map((ev: any, idx: number) => {
+                        const isImage = (ev.file_type && ev.file_type.toLowerCase().includes('image')) ||
+                          (ev.file_name && /\.(jpg|jpeg|png|webp|gif)$/i.test(ev.file_name)) ||
+                          (ev.storage_path && ev.storage_path.startsWith('data:image'));
+                        const isPdf = (ev.file_type && ev.file_type.toLowerCase().includes('pdf')) ||
+                          (ev.file_name && /\.pdf$/i.test(ev.file_name)) ||
+                          (ev.storage_path && ev.storage_path.startsWith('data:application/pdf'));
+
+                        return (
+                          <div
+                            key={ev.id || idx}
+                            className="bg-white rounded border border-[#E9ECEF] hover:border-[#005eb2] transition-all shadow-xs p-3 flex flex-col justify-between space-y-2.5"
+                          >
+                            <div className="space-y-2">
+                              {/* Preview Area */}
+                              {isImage && ev.storage_path && ev.storage_path.startsWith('data:') ? (
+                                <div
+                                  onClick={() => setLightboxMedia({
+                                    url: ev.storage_path,
+                                    title: ev.file_name || 'Citizen Complaint Photo Proof',
+                                    subtitle: `Attached for Work ${selectedComplaint.workId}`,
+                                    uploader: ev.uploaded_by || ev.uploadedBy || 'Citizen Complainant',
+                                    date: ev.created_at,
+                                  })}
+                                  className="relative h-36 bg-slate-100 rounded overflow-hidden cursor-pointer group border border-slate-200"
+                                >
+                                  <img
+                                    src={ev.storage_path}
+                                    alt={ev.file_name || 'Citizen proof'}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-bold">
+                                    <ZoomIn size={16} />
+                                    <span>Click to Enlarge</span>
+                                  </div>
+                                  <span className="absolute top-1.5 left-1.5 bg-blue-900/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
+                                    Citizen Photo Proof
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="h-24 bg-slate-50 rounded border border-slate-200 flex items-center justify-center p-3 text-center">
+                                  <div className="space-y-1">
+                                    <FileText size={24} className="mx-auto text-[#005eb2]" />
+                                    <span className="text-[10px] font-bold text-slate-700 block truncate max-w-[200px]">
+                                      {ev.file_name || 'Attached Evidence Document'}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Metadata */}
+                              <div>
+                                <div className="font-bold text-xs text-[#000a1f] truncate" title={ev.file_name}>
+                                  {ev.file_name || 'Citizen Attachment'}
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between">
+                                  <span>By: <strong>{ev.uploaded_by || ev.uploadedBy || 'Citizen'}</strong></span>
+                                  {ev.created_at && (
+                                    <span>{new Date(ev.created_at).toLocaleDateString()}</span>
+                                  )}
+                                </div>
+                                {ev.description && (
+                                  <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 mt-1 italic">
+                                    "{ev.description}"
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Action links */}
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
+                              {ev.storage_path && ev.storage_path.startsWith('data:') ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setLightboxMedia({
+                                    url: ev.storage_path,
+                                    title: ev.file_name || 'Citizen Complaint Proof',
+                                    subtitle: `Attached for Work ${selectedComplaint.workId}`,
+                                    uploader: ev.uploaded_by || ev.uploadedBy || 'Citizen Complainant',
+                                    date: ev.created_at,
+                                    isPdf: isPdf,
+                                  })}
+                                  className="text-[#005eb2] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Eye size={12} />
+                                  <span>View Proof</span>
+                                </button>
+                              ) : (
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                                  Verified Record
+                                </span>
+                              )}
+
+                              {ev.storage_path && ev.storage_path.startsWith('data:') && (
+                                <a
+                                  href={ev.storage_path}
+                                  download={ev.file_name || 'citizen_proof.jpg'}
+                                  className="text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Download size={12} />
+                                  <span>Download</span>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 2: IMPLEMENTING AGENCY PROJECT PROOFS */}
+              {complaintProofsTab === 'agency' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider flex items-center gap-1.5">
+                        <Building2 size={14} className="text-emerald-700" />
+                        <span>Implementing Agency Ground Proofs &amp; Field Photos for Work {selectedComplaint.workId}</span>
+                      </h4>
+                      <p className="text-[11px] text-[#747780]">
+                        Official execution proof submitted by the executing agency. Cross-verify with citizen's allegation.
+                      </p>
+                    </div>
+                  </div>
+
+                  {complaintAgencyLoading ? (
+                    <div className="py-8 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+                      <RotateCw size={16} className="animate-spin text-[#00204a]" />
+                      <span>Fetching agency evidence from database…</span>
+                    </div>
+                  ) : complaintAgencyEvidence.length === 0 && complaintAgencyUpdates.length === 0 ? (
+                    <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-dashed border-[#CED4DA] space-y-2">
+                      <Building2 size={28} className="mx-auto text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-700">No ground proof uploaded yet by the Implementing Agency.</p>
+                      <p className="text-[11px] text-slate-500">
+                        You can dispatch an administrative order to the agency requesting photo proof and execution explanation.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Agency Evidence Cards */}
+                      {complaintAgencyEvidence.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {complaintAgencyEvidence.map((ev, idx) => {
+                            const isImage = (ev.file_type && ev.file_type.toLowerCase().includes('photo')) ||
+                              (ev.file_type && ev.file_type.toLowerCase().includes('image')) ||
+                              (ev.file_name && /\.(jpg|jpeg|png|webp|gif)$/i.test(ev.file_name)) ||
+                              (ev.storage_path && ev.storage_path.startsWith('data:image'));
+
+                            return (
+                              <div
+                                key={ev.id || idx}
+                                className="bg-white rounded border border-[#E9ECEF] hover:border-emerald-600 transition-all shadow-xs p-3 space-y-2"
+                              >
+                                {isImage && ev.storage_path && ev.storage_path.startsWith('data:') ? (
+                                  <div
+                                    onClick={() => setLightboxMedia({
+                                      url: ev.storage_path,
+                                      title: ev.file_name || 'Agency Site Progress Photograph',
+                                      subtitle: `Work ID: ${selectedComplaint.workId} · Agency: ${ev.agency_name || 'Executing Authority'}`,
+                                      uploader: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
+                                      date: ev.created_at,
+                                    })}
+                                    className="relative h-32 bg-slate-100 rounded overflow-hidden cursor-pointer group border border-slate-200"
+                                  >
+                                    <img
+                                      src={ev.storage_path}
+                                      alt={ev.file_name}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 text-white text-xs font-bold">
+                                      <ZoomIn size={14} />
+                                      <span>Enlarge Field Photo</span>
+                                    </div>
+                                    <span className="absolute top-1.5 left-1.5 bg-emerald-800 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                      Agency Field Photo
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="h-20 bg-emerald-50/50 rounded border border-emerald-100 flex items-center gap-2.5 p-2.5">
+                                    <FileText size={22} className="text-emerald-700 flex-shrink-0" />
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-xs text-slate-800 truncate">{ev.file_name}</div>
+                                      <div className="text-[10px] text-emerald-800 font-medium">{ev.file_type}</div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div>
+                                  <div className="font-bold text-xs text-slate-900 truncate">{ev.file_name}</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">
+                                    {ev.file_type} · {new Date(ev.created_at).toLocaleDateString()}
+                                  </div>
+                                  {ev.description && (
+                                    <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 mt-1">
+                                      {ev.description}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Agency Execution Updates History */}
+                      {complaintAgencyUpdates.length > 0 && (
+                        <div className="border border-emerald-200 rounded-md p-3 bg-emerald-50/30 space-y-2">
+                          <span className="text-[11px] font-bold uppercase text-emerald-900 block tracking-wider">
+                            Latest Agency Ground Execution Submissions ({complaintAgencyUpdates.length})
+                          </span>
+                          <div className="space-y-2">
+                            {complaintAgencyUpdates.map((up, idx) => (
+                              <div key={up.id || idx} className="bg-white p-2.5 rounded border border-emerald-100 text-xs space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-emerald-900">{up.milestone_status}</span>
+                                  <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                    {up.physical_progress}% Physical Progress
+                                  </span>
+                                </div>
+                                <p className="text-slate-700 text-[11px]">{up.remarks}</p>
+                                <div className="text-[10px] text-slate-400">
+                                  Measurement Date: {up.update_date} · Submitted: {new Date(up.submitted_at).toLocaleDateString()}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: TIMELINE & AUDIT LOG */}
+              {complaintProofsTab === 'timeline' && (
+                <div className="border border-[#E9ECEF] rounded p-3 bg-white space-y-2 max-h-56 overflow-y-auto">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase text-[#00204a] flex items-center gap-1">
+                      <Clock size={12} className="text-[#005eb2]" />
+                      <span>Administrative Dossier Timeline</span>
+                    </span>
+                    {timelineLoading && <span className="text-[10px] text-[#6C757D]">Refreshing timeline…</span>}
+                  </div>
+                  {complaintTimeline.length === 0 ? (
+                    <p className="text-[11px] text-[#6C757D] italic">No prior events recorded.</p>
+                  ) : (
+                    <div className="space-y-2 border-l-2 border-[#005eb2]/30 pl-3">
+                      {complaintTimeline.map((ev, i) => (
+                        <div key={ev.id || i} className="text-[11px] pb-1">
+                          <div className="flex items-center justify-between text-[10px] text-[#6C757D]">
+                            <span className="font-bold text-[#00204a]">{ev.eventType.replace(/_/g, ' ')} ({ev.status})</span>
+                            <span>{new Date(ev.createdAt).toLocaleString()}</span>
+                          </div>
+                          <div className="text-[10px] text-[#005eb2] font-medium">
+                            By {ev.actorRole} ({ev.actorName})
+                          </div>
+                          <p className="text-[#495057] bg-slate-50 p-1.5 rounded border border-slate-100 mt-0.5">
+                            {ev.remarks}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: STRUCTURED WORKFLOW ACTION DISPATCHER */}
+              {complaintProofsTab === 'action' && (
+                <div className="border border-[#E9ECEF] rounded p-4 bg-white space-y-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-[#000a1f] mb-1">
+                      Select Administrative Workflow Action: <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedAction}
+                      onChange={e => {
+                        const act = e.target.value;
+                        setSelectedAction(act);
+                        if (act === 'START_REVIEW') {
+                          setActionRemarks('Commenced desk examination and project dossier validation.');
+                        } else if (act === 'REQUEST_CLARIFICATION') {
+                          setActionRemarks('Please state specific milestone or physical landmark observations.');
+                        } else if (act === 'REQUEST_AGENCY_INFO') {
+                          setActionRemarks('Please furnish physical progress status and latest expenditure justification.');
+                        } else if (act === 'REQUEST_INSPECTION') {
+                          setActionRemarks('Field engineer deputed for ground verification and measurement check.');
+                        } else if (act === 'RECORD_INSPECTION') {
+                          setActionRemarks('Physical inspection conducted on-site. Verified foundation and structure alignment.');
+                        } else if (act === 'REQUEST_VERIFICATION') {
+                          setActionRemarks('Referred to Auditor Verification Desk for physical/financial ledger concordance.');
+                        } else if (act === 'ESCALATE') {
+                          setActionRemarks('Escalated to State Nodal Authority due to cross-jurisdiction or fund clearance requirements.');
+                        } else if (act === 'RESOLVE') {
+                          setActionRemarks('Rectification completed by agency and verified by Assistant Engineer.');
+                        } else if (act === 'CLOSE') {
+                          setActionRemarks('Case reviewed, verified, and officially closed.');
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-[#00204a] rounded bg-white text-[#00204a] font-bold outline-none"
+                    >
+                      <option value="START_REVIEW">1. START_REVIEW — Commence Desk Examination</option>
+                      <option value="REQUEST_CLARIFICATION">2. REQUEST_CLARIFICATION — Request Details from Citizen</option>
+                      <option value="REQUEST_AGENCY_INFO">3. REQUEST_AGENCY_INFO — Request Progress &amp; Explanation from Agency</option>
+                      <option value="REQUEST_INSPECTION">4. REQUEST_INSPECTION — Dispatch Field Inspection Order</option>
+                      <option value="RECORD_INSPECTION">5. RECORD_INSPECTION — Record Physical Inspection Findings</option>
+                      <option value="REQUEST_VERIFICATION">6. REQUEST_VERIFICATION — Route to Auditor Verification Desk</option>
+                      <option value="ESCALATE">7. ESCALATE — Escalate to State Nodal Authority</option>
+                      <option value="RESOLVE">8. RESOLVE — Issue Official Grievance Resolution Order</option>
+                      <option value="CLOSE">9. CLOSE — Final Administrative Closure</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-[#000a1f] mb-1">
+                      Action Remarks / Specific Instructions: <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={actionRemarks}
+                      onChange={e => setActionRemarks(e.target.value)}
+                      placeholder="Enter specific instructions, query details, or inspection observations..."
+                      className="w-full p-2 border border-[#CED4DA] rounded text-xs focus:outline-none focus:border-[#00204a]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-[#000a1f] mb-1">
+                      Public Summary for Citizen Tracker (Optional Customization)
+                    </label>
+                    <input
+                      type="text"
+                      value={actionPublicResponse}
+                      onChange={e => setActionPublicResponse(e.target.value)}
+                      placeholder="Leave empty to use standard transparent notification for this action..."
+                      className="w-full px-3 py-1.5 border border-[#CED4DA] rounded text-xs focus:outline-none focus:border-[#00204a]"
+                    />
+                  </div>
+
+                  {/* Supporting Document / Inspection Proof Upload */}
+                  <div className="p-3 bg-blue-50/50 border border-blue-200/70 rounded space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-[#00204a] text-xs flex items-center gap-1.5">
+                        <Paperclip size={13} className="text-[#005eb2]" />
+                        <span>Attach Official Officer Verification / Inspection Document (Optional)</span>
+                      </label>
+                      <span className="text-[10px] text-slate-500">PDF, JPG, PNG (Max 15MB)</span>
+                    </div>
+
+                    {!attachedFile ? (
+                      <div className="flex items-center gap-2">
+                        <label className="px-3 py-1.5 bg-white border border-dashed border-[#005eb2] text-[#00204a] rounded text-xs font-bold hover:bg-blue-50/80 cursor-pointer flex items-center gap-1.5 transition-colors">
+                          <Upload size={12} className="text-[#005eb2]" />
+                          <span>Choose Document or Photo</span>
+                          <input
+                            type="file"
+                            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                            onChange={handleFileSelect}
+                            className="hidden"
+                          />
+                        </label>
+                        <span className="text-[11px] text-slate-500 italic">No document attached</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-2 bg-white rounded border border-blue-300 text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText size={14} className="text-[#005eb2] flex-shrink-0" />
+                            <span className="font-bold text-slate-800 truncate">{attachedFile.name}</span>
+                            <span className="text-[10px] text-slate-400">({Math.round(attachedFile.size / 1024)} KB)</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAttachedFile(null)}
+                            className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
+                            title="Remove attached document"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={evidenceDescription}
+                          onChange={e => setEvidenceDescription(e.target.value)}
+                          placeholder="Document label or inspection note (e.g., Field measurement report)..."
+                          className="w-full px-2.5 py-1 text-xs border border-slate-300 rounded bg-white"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-[#000a1f] mb-1">
+                      Internal Administrative Notes (Confidential)
+                    </label>
+                    <input
+                      type="text"
+                      value={complaintNotesInput}
+                      onChange={e => setComplaintNotesInput(e.target.value)}
+                      placeholder="Internal dispatch number, collectorate file reference, or memo id..."
+                      className="w-full px-3 py-1.5 border border-[#CED4DA] rounded text-xs focus:outline-none focus:border-[#00204a]"
+                    />
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Structured Workflow Action Dispatcher */}
-            <div className="border-t border-[#E9ECEF] pt-3 space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-[#000a1f] mb-1">
-                  Select Administrative Workflow Action: <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={selectedAction}
-                  onChange={e => {
-                    const act = e.target.value;
-                    setSelectedAction(act);
-                    if (act === 'START_REVIEW') {
-                      setActionRemarks('Commenced desk examination and project dossier validation.');
-                    } else if (act === 'REQUEST_CLARIFICATION') {
-                      setActionRemarks('Please state specific milestone or physical landmark observations.');
-                    } else if (act === 'REQUEST_AGENCY_INFO') {
-                      setActionRemarks('Please furnish physical progress status and latest expenditure justification.');
-                    } else if (act === 'REQUEST_INSPECTION') {
-                      setActionRemarks('Field engineer deputed for ground verification and measurement check.');
-                    } else if (act === 'RECORD_INSPECTION') {
-                      setActionRemarks('Physical inspection conducted on-site. Verified foundation and structure alignment.');
-                    } else if (act === 'REQUEST_VERIFICATION') {
-                      setActionRemarks('Referred to Auditor Verification Desk for physical/financial ledger concordance.');
-                    } else if (act === 'ESCALATE') {
-                      setActionRemarks('Escalated to State Nodal Authority due to cross-jurisdiction or fund clearance requirements.');
-                    } else if (act === 'RESOLVE') {
-                      setActionRemarks('Rectification completed by agency and verified by Assistant Engineer.');
-                    } else if (act === 'CLOSE') {
-                      setActionRemarks('Case reviewed, verified, and officially closed.');
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-[#00204a] rounded bg-white text-[#00204a] font-bold outline-none"
+            {/* Modal Footer Actions */}
+            <div className="flex items-center justify-between gap-2 border-t border-[#E9ECEF] pt-3 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setComplaintProofsTab(complaintProofsTab === 'action' ? 'citizen' : 'action')}
+                  className="text-xs font-bold text-[#005eb2] hover:underline flex items-center gap-1 cursor-pointer"
                 >
-                  <option value="START_REVIEW">1. START_REVIEW — Commence Desk Examination</option>
-                  <option value="REQUEST_CLARIFICATION">2. REQUEST_CLARIFICATION — Request Details from Citizen</option>
-                  <option value="REQUEST_AGENCY_INFO">3. REQUEST_AGENCY_INFO — Request Progress &amp; Explanation from Agency</option>
-                  <option value="REQUEST_INSPECTION">4. REQUEST_INSPECTION — Dispatch Field Inspection Order</option>
-                  <option value="RECORD_INSPECTION">5. RECORD_INSPECTION — Record Physical Inspection Findings</option>
-                  <option value="REQUEST_VERIFICATION">6. REQUEST_VERIFICATION — Route to Auditor Verification Desk</option>
-                  <option value="ESCALATE">7. ESCALATE — Escalate to State Nodal Authority</option>
-                  <option value="RESOLVE">8. RESOLVE — Issue Official Grievance Resolution Order</option>
-                  <option value="CLOSE">9. CLOSE — Final Administrative Closure</option>
-                </select>
+                  {complaintProofsTab === 'action' ? (
+                    <>
+                      <Camera size={13} />
+                      <span>Back to Proofs Explorer</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={13} />
+                      <span>Go to Action Order</span>
+                    </>
+                  )}
+                </button>
               </div>
 
-              <div>
-                <label className="block font-bold text-[#000a1f] mb-1">
-                  Action Remarks / Specific Instructions: <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  rows={2}
-                  value={actionRemarks}
-                  onChange={e => setActionRemarks(e.target.value)}
-                  placeholder="Enter specific instructions, query details, or inspection observations..."
-                  className="w-full p-2 border border-[#CED4DA] rounded text-xs focus:outline-none focus:border-[#00204a]"
-                />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedComplaint(null)}
+                  className="btn-outline text-xs py-1.5 px-3 cursor-pointer"
+                >
+                  Close Desk
+                </button>
+                <button
+                  onClick={() => handleExecuteStructuredAction(selectedAction)}
+                  disabled={isUpdatingComplaint || !actionRemarks.trim()}
+                  className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 cursor-pointer font-bold disabled:opacity-50"
+                >
+                  {isUpdatingComplaint ? (
+                    <>
+                      <RotateCw size={12} className="animate-spin" />
+                      <span>Executing Action…</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={14} />
+                      <span>Execute {selectedAction.replace(/_/g, ' ')}</span>
+                    </>
+                  )}
+                </button>
               </div>
-
-              <div>
-                <label className="block font-bold text-[#000a1f] mb-1">
-                  Public Summary for Citizen Tracker (Optional Customization)
-                </label>
-                <input
-                  type="text"
-                  value={actionPublicResponse}
-                  onChange={e => setActionPublicResponse(e.target.value)}
-                  placeholder="Leave empty to use standard transparent notification for this action..."
-                  className="w-full px-3 py-1.5 border border-[#CED4DA] rounded text-xs focus:outline-none focus:border-[#00204a]"
-                />
-              </div>
-
-              {/* Supporting Document / Inspection Proof Upload */}
-              <div className="p-3 bg-blue-50/50 border border-blue-200/70 rounded space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="font-bold text-[#00204a] text-xs flex items-center gap-1.5">
-                    <Paperclip size={13} className="text-[#005eb2]" />
-                    <span>Attach Inspection Proof / Official Verification Document (Optional)</span>
-                  </label>
-                  <span className="text-[10px] text-slate-500">PDF, JPG, PNG (Max 15MB)</span>
-                </div>
-
-                {!attachedFile ? (
-                  <div className="flex items-center gap-2">
-                    <label className="px-3 py-1.5 bg-white border border-dashed border-[#005eb2] text-[#00204a] rounded text-xs font-bold hover:bg-blue-50/80 cursor-pointer flex items-center gap-1.5 transition-colors">
-                      <Upload size={12} className="text-[#005eb2]" />
-                      <span>Choose File to Attach</span>
-                      <input
-                        type="file"
-                        accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                        onChange={handleFileSelect}
-                        className="hidden"
-                      />
-                    </label>
-                    <span className="text-[11px] text-slate-500 italic">No document selected</span>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between p-2 bg-white rounded border border-blue-300 text-xs">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText size={14} className="text-[#005eb2] flex-shrink-0" />
-                        <span className="font-bold text-slate-800 truncate">{attachedFile.name}</span>
-                        <span className="text-[10px] text-slate-400">({Math.round(attachedFile.size / 1024)} KB)</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setAttachedFile(null)}
-                        className="text-rose-600 hover:text-rose-800 p-1 cursor-pointer"
-                        title="Remove attached document"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      value={evidenceDescription}
-                      onChange={e => setEvidenceDescription(e.target.value)}
-                      placeholder="Document label or inspection note (e.g., Joint inspection measurement report)..."
-                      className="w-full px-2.5 py-1 text-xs border border-slate-300 rounded bg-white"
-                    />
-                  </div>
-                )}
-
-                {/* Previously Attached Evidence */}
-                {complaintEvidenceList.length > 0 && (
-                  <div className="pt-1 border-t border-blue-200/50">
-                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block mb-1">
-                      Attached Case Evidence ({complaintEvidenceList.length}):
-                    </span>
-                    <div className="space-y-1">
-                      {complaintEvidenceList.map((ev: any, idx: number) => (
-                        <div key={ev.id || idx} className="flex items-center justify-between text-[11px] bg-white p-1.5 rounded border border-slate-200">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <FileText size={12} className="text-blue-700 flex-shrink-0" />
-                            <span className="font-semibold text-slate-800 truncate">{ev.file_name || ev.fileName}</span>
-                            <span className="text-[10px] text-slate-400">by {ev.uploaded_by || ev.uploadedBy || 'Authority'}</span>
-                          </div>
-                          {ev.storage_path && ev.storage_path.startsWith('data:') ? (
-                            <a
-                              href={ev.storage_path}
-                              download={ev.file_name || 'evidence.pdf'}
-                              className="text-xs font-bold text-[#0066CC] hover:underline flex items-center gap-0.5 ml-2"
-                            >
-                              <span>Download</span>
-                            </a>
-                          ) : (
-                            <span className="text-[10px] text-emerald-700 font-medium px-1.5 py-0.5 bg-emerald-50 rounded">
-                              Verified
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block font-bold text-[#000a1f] mb-1">
-                  Internal Administrative Notes (Confidential)
-                </label>
-                <input
-                  type="text"
-                  value={complaintNotesInput}
-                  onChange={e => setComplaintNotesInput(e.target.value)}
-                  placeholder="Internal dispatch number, collectorate file reference, or memo id..."
-                  className="w-full px-3 py-1.5 border border-[#CED4DA] rounded text-xs focus:outline-none focus:border-[#00204a]"
-                />
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2 border-t border-[#E9ECEF] pt-3">
-              <button
-                onClick={() => setSelectedComplaint(null)}
-                className="btn-outline text-xs py-1.5 px-3 cursor-pointer"
-              >
-                Close Desk
-              </button>
-              <button
-                onClick={() => handleExecuteStructuredAction(selectedAction)}
-                disabled={isUpdatingComplaint || !actionRemarks.trim()}
-                className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 cursor-pointer font-bold disabled:opacity-50"
-              >
-                {isUpdatingComplaint ? (
-                  <>
-                    <RotateCw size={12} className="animate-spin" />
-                    <span>Executing Workflow Action…</span>
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck size={14} />
-                    <span>Execute {selectedAction.replace(/_/g, ' ')}</span>
-                  </>
-                )}
-              </button>
             </div>
           </div>
         </div>
       )}
 
 
-      {/* 7. Interactive Inspection & Verification Modal */}
+      {/* 8. Comprehensive Interactive Inspection & Proofs Modal */}
       {inspectingWork && (
-        <div className="fixed inset-0 z-50 bg-[#000a1f]/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-sm border border-[#CED4DA] shadow-xl max-w-xl w-full p-6 space-y-4 my-8">
-            <div className="flex items-center justify-between border-b border-[#E9ECEF] pb-3">
+        <div className="fixed inset-0 z-50 bg-[#000a1f]/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-md border border-[#CED4DA] shadow-2xl max-w-3xl w-full p-5 sm:p-6 space-y-4 my-6 animate-fade-in max-h-[92vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#E9ECEF] pb-3 flex-shrink-0">
               <div>
-                <span className="text-[10px] font-bold text-[#00204a] uppercase tracking-wider bg-[#EEF2F6] px-2 py-0.5 rounded">
-                  Official Verification Action
+                <span className="text-[10px] font-bold text-[#00204a] uppercase tracking-wider bg-[#EEF2F6] px-2.5 py-0.5 rounded border border-[#D5DCE4]">
+                  Physical Inspection &amp; Compliance Center
                 </span>
-                <h3 className="text-base font-bold text-[#000a1f] mt-1">
-                  Physical Inspection & Compliance Order
+                <h3 className="text-base sm:text-lg font-bold text-[#000a1f] mt-1 flex items-center gap-2">
+                  <span>Work Dossier &amp; Ground Evidence Examination</span>
                 </h3>
               </div>
               <button
                 onClick={() => setInspectingWork(null)}
-                className="text-[#ADB5BD] hover:text-[#000a1f] text-lg font-bold p-1"
+                className="text-[#ADB5BD] hover:text-[#000a1f] text-2xl font-bold p-1 cursor-pointer leading-none"
               >
                 &times;
               </button>
             </div>
 
-            {/* Work Details Summary */}
-            <div className="bg-[#F8F9FA] p-3 rounded border border-[#E9ECEF] text-xs space-y-1.5">
-              <div>
-                <span className="text-[#6C757D]">Work ID: </span>
-                <strong className="font-mono text-[#00204a]">{inspectingWork.work_id}</strong>
-              </div>
-              <div>
-                <span className="text-[#6C757D]">Description: </span>
-                <span className="text-[#495057]">{inspectingWork.work_description}</span>
-              </div>
-              <div className="flex flex-wrap gap-4 pt-1">
-                <div>
-                  <span className="text-[#6C757D]">Sanctioned: </span>
-                  <strong className="font-mono text-[#00204a]">{formatCurrency(inspectingWork.sanction_amount)}</strong>
+            {/* Scrollable Body */}
+            <div className="overflow-y-auto pr-1 space-y-4 flex-1">
+              {/* Work Details Summary */}
+              <div className="bg-[#F8F9FA] p-3.5 rounded border border-[#E9ECEF] text-xs space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[#6C757D]">Work ID:</span>
+                    <strong className="font-mono text-[#00204a] bg-white px-2 py-0.5 rounded border border-[#CED4DA]">
+                      {inspectingWork.work_id}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[#6C757D] mr-1">Risk Score:</span>
+                    <strong className={`font-mono px-2 py-0.5 rounded text-[10px] font-bold ${
+                      inspectingWork.risk_level === 'HIGH' ? 'bg-[#FFF5F5] text-[#DC3545] border border-[#FFC9C9]' : 'bg-[#E8F5E9] text-[#2E7D32] border border-[#C8E6C9]'
+                    }`}>
+                      {inspectingWork.risk_score}/100 ({inspectingWork.risk_level})
+                    </strong>
+                  </div>
                 </div>
+
                 <div>
-                  <span className="text-[#6C757D]">Paid: </span>
-                  <strong className="font-mono text-[#495057]">{formatCurrency(inspectingWork.total_paid)}</strong>
+                  <span className="text-[#6C757D] block mb-0.5">Description:</span>
+                  <span className="text-[#000a1f] font-bold">{inspectingWork.work_description}</span>
                 </div>
-                <div>
-                  <span className="text-[#6C757D]">Risk: </span>
-                  <strong className={`font-mono ${inspectingWork.risk_level === 'HIGH' ? 'text-[#DC3545]' : 'text-[#F08C00]'}`}>
-                    {inspectingWork.risk_score}/100 ({inspectingWork.risk_level})
-                  </strong>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px]">
+                  <div className="p-2 bg-white rounded border border-[#E9ECEF]">
+                    <span className="text-[#6C757D] block text-[10px] uppercase">Sanctioned</span>
+                    <strong className="font-mono text-[#00204a]">{formatCurrency(inspectingWork.sanction_amount)}</strong>
+                  </div>
+                  <div className="p-2 bg-white rounded border border-[#E9ECEF]">
+                    <span className="text-[#6C757D] block text-[10px] uppercase">Total Paid</span>
+                    <strong className="font-mono text-[#495057]">{formatCurrency(inspectingWork.total_paid)}</strong>
+                  </div>
+                  <div className="p-2 bg-white rounded border border-[#E9ECEF]">
+                    <span className="text-[#6C757D] block text-[10px] uppercase">Disbursement</span>
+                    <strong className="font-mono text-[#0D6EFD]">
+                      {inspectingWork.disbursement_ratio ? `${Math.round(inspectingWork.disbursement_ratio * 100)}%` : '0%'}
+                    </strong>
+                  </div>
+                  <div className="p-2 bg-white rounded border border-[#E9ECEF]">
+                    <span className="text-[#6C757D] block text-[10px] uppercase">Current Status</span>
+                    <strong className="text-[#00204a]">{inspectingWork.work_status}</strong>
+                  </div>
                 </div>
+
+                {inspectingWork.risk_explanation && (
+                  <div className="text-[11px] text-[#C92A2A] bg-white p-2 rounded border border-[#FFD8D8]">
+                    <strong>Risk Anomaly Flags:</strong> {inspectingWork.risk_explanation}
+                  </div>
+                )}
               </div>
-              {inspectingWork.risk_explanation && (
-                <div className="text-[11px] text-[#C92A2A] bg-white p-2 rounded border border-[#FFD8D8] mt-1">
-                  <strong>Risk Anomaly Flags:</strong> {inspectingWork.risk_explanation}
+
+              {/* Inspection Center Tabs */}
+              <div className="flex border-b border-[#DEE2E6] gap-2 sm:gap-4 text-xs font-bold overflow-x-auto pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => setInspectingTab('evidence')}
+                  className={`pb-2 px-1 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    inspectingTab === 'evidence'
+                      ? 'border-b-2 border-[#00204a] text-[#00204a]'
+                      : 'text-[#6C757D] hover:text-[#00204a]'
+                  }`}
+                >
+                  <Camera size={14} className="text-emerald-700" />
+                  <span>Agency Ground Photos &amp; Proofs ({inspectingWorkEvidence.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectingTab('updates')}
+                  className={`pb-2 px-1 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    inspectingTab === 'updates'
+                      ? 'border-b-2 border-[#00204a] text-[#00204a]'
+                      : 'text-[#6C757D] hover:text-[#00204a]'
+                  }`}
+                >
+                  <TrendingUp size={14} className="text-[#005eb2]" />
+                  <span>Milestone Updates ({inspectingWorkUpdates.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectingTab('complaints')}
+                  className={`pb-2 px-1 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    inspectingTab === 'complaints'
+                      ? 'border-b-2 border-[#00204a] text-[#00204a]'
+                      : 'text-[#6C757D] hover:text-[#00204a]'
+                  }`}
+                >
+                  <AlertCircle size={14} className="text-[#DC3545]" />
+                  <span>Citizen Grievances ({inspectingWorkComplaints.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectingTab('action')}
+                  className={`pb-2 px-1 flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                    inspectingTab === 'action'
+                      ? 'border-b-2 border-[#00204a] text-[#00204a]'
+                      : 'text-[#6C757D] hover:text-[#00204a]'
+                  }`}
+                >
+                  <ShieldCheck size={14} className="text-[#00204a]" />
+                  <span>Verification Order</span>
+                </button>
+              </div>
+
+              {/* TAB 1: AGENCY GROUND PHOTOS & PROOFS */}
+              {inspectingTab === 'evidence' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider flex items-center gap-1.5">
+                        <Camera size={14} className="text-emerald-700" />
+                        <span>Implementing Agency Ground Proofs &amp; Photo Submissions</span>
+                      </h4>
+                      <p className="text-[11px] text-[#747780]">
+                        Photographs, site inspection records, and measurement documents submitted by the implementing agency.
+                      </p>
+                    </div>
+                  </div>
+
+                  {inspectingLoadingEvidence ? (
+                    <div className="py-8 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+                      <RotateCw size={16} className="animate-spin text-[#00204a]" />
+                      <span>Loading ground proofs &amp; photographs from database…</span>
+                    </div>
+                  ) : inspectingWorkEvidence.length === 0 ? (
+                    <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-dashed border-[#CED4DA] space-y-2">
+                      <Camera size={28} className="mx-auto text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-700">No ground photos or verification certificates uploaded yet by the agency.</p>
+                      <p className="text-[11px] text-slate-500">
+                        The implementing authority has not attached field photographs or inspection proofs for this work record.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {inspectingWorkEvidence.map((ev, idx) => {
+                        const isImage = (ev.file_type && ev.file_type.toLowerCase().includes('photo')) ||
+                          (ev.file_type && ev.file_type.toLowerCase().includes('image')) ||
+                          (ev.file_name && /\.(jpg|jpeg|png|webp|gif)$/i.test(ev.file_name)) ||
+                          (ev.storage_path && ev.storage_path.startsWith('data:image'));
+
+                        return (
+                          <div
+                            key={ev.id || idx}
+                            className="bg-white rounded border border-[#E9ECEF] hover:border-emerald-600 transition-all shadow-xs p-3 space-y-2.5 flex flex-col justify-between"
+                          >
+                            <div className="space-y-2">
+                              {isImage && ev.storage_path && ev.storage_path.startsWith('data:') ? (
+                                <div
+                                  onClick={() => setLightboxMedia({
+                                    url: ev.storage_path,
+                                    title: ev.file_name || 'Ground Progress Photo Proof',
+                                    subtitle: `Work ID: ${inspectingWork.work_id} · ${ev.file_type}`,
+                                    uploader: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
+                                    date: ev.created_at,
+                                  })}
+                                  className="relative h-36 bg-slate-100 rounded overflow-hidden cursor-pointer group border border-slate-200"
+                                >
+                                  <img
+                                    src={ev.storage_path}
+                                    alt={ev.file_name}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-bold">
+                                    <ZoomIn size={16} />
+                                    <span>Enlarge Photo</span>
+                                  </div>
+                                  <span className="absolute top-1.5 left-1.5 bg-emerald-800 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs">
+                                    Ground Photo Proof
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="h-24 bg-emerald-50/50 rounded border border-emerald-100 flex items-center justify-center p-3 text-center">
+                                  <div className="space-y-1">
+                                    <FileText size={24} className="mx-auto text-emerald-700" />
+                                    <span className="text-[10px] font-bold text-slate-800 block truncate max-w-[220px]">
+                                      {ev.file_name}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div>
+                                <div className="font-bold text-xs text-[#000a1f] truncate" title={ev.file_name}>
+                                  {ev.file_name}
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between">
+                                  <span className="font-semibold text-emerald-800">{ev.file_type}</span>
+                                  {ev.created_at && (
+                                    <span>{new Date(ev.created_at).toLocaleDateString()}</span>
+                                  )}
+                                </div>
+                                {ev.description && (
+                                  <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 mt-1">
+                                    {ev.description}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
+                              {ev.storage_path && ev.storage_path.startsWith('data:') ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setLightboxMedia({
+                                    url: ev.storage_path,
+                                    title: ev.file_name || 'Ground Progress Photo Proof',
+                                    subtitle: `Work ID: ${inspectingWork.work_id} · ${ev.file_type}`,
+                                    uploader: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
+                                    date: ev.created_at,
+                                  })}
+                                  className="text-emerald-700 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Eye size={12} />
+                                  <span>View Photo Proof</span>
+                                </button>
+                              ) : (
+                                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                                  Registered Record
+                                </span>
+                              )}
+
+                              {ev.storage_path && ev.storage_path.startsWith('data:') && (
+                                <a
+                                  href={ev.storage_path}
+                                  download={ev.file_name || 'agency_proof.jpg'}
+                                  className="text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Download size={12} />
+                                  <span>Download</span>
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 2: MILESTONE UPDATES */}
+              {inspectingTab === 'updates' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider flex items-center gap-1.5">
+                        <TrendingUp size={14} className="text-[#005eb2]" />
+                        <span>Agency Milestone Submissions &amp; Physical Progress</span>
+                      </h4>
+                      <p className="text-[11px] text-[#747780]">
+                        Log of physical progress percentage and milestone remarks submitted by the agency.
+                      </p>
+                    </div>
+                  </div>
+
+                  {inspectingWorkUpdates.length === 0 ? (
+                    <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-dashed border-[#CED4DA] space-y-2">
+                      <TrendingUp size={28} className="mx-auto text-slate-400" />
+                      <p className="text-xs font-semibold text-slate-700">No milestone progress updates submitted yet.</p>
+                      <p className="text-[11px] text-slate-500">
+                        The agency has not yet filed periodic measurement entries for this project.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {inspectingWorkUpdates.map((up, idx) => (
+                        <div key={up.id || idx} className="bg-white p-3.5 rounded border border-[#E9ECEF] text-xs space-y-2 shadow-xs">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className="font-bold text-[#000a1f] text-xs">{up.milestone_status}</span>
+                            <span className="font-mono font-bold text-[#005eb2] bg-blue-50 px-2.5 py-0.5 rounded border border-blue-200">
+                              {up.physical_progress}% Physical Progress
+                            </span>
+                          </div>
+
+                          <div className="w-full bg-[#E9ECEF] h-2 rounded-full overflow-hidden">
+                            <div
+                              className="bg-[#005eb2] h-full rounded-full transition-all"
+                              style={{ width: `${Math.min(up.physical_progress, 100)}%` }}
+                            />
+                          </div>
+
+                          <p className="text-slate-700 text-xs bg-slate-50 p-2 rounded border border-slate-100">
+                            {up.remarks}
+                          </p>
+
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
+                            <span>Measurement Date: <strong>{up.update_date}</strong></span>
+                            <span>Submitted: {new Date(up.submitted_at).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: CITIZEN GRIEVANCES */}
+              {inspectingTab === 'complaints' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider flex items-center gap-1.5">
+                        <AlertCircle size={14} className="text-[#DC3545]" />
+                        <span>Public Grievances Filed on Work {inspectingWork.work_id}</span>
+                      </h4>
+                      <p className="text-[11px] text-[#747780]">
+                        Complaints and citizen observations registered against this project in the district.
+                      </p>
+                    </div>
+                  </div>
+
+                  {inspectingWorkComplaints.length === 0 ? (
+                    <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-dashed border-[#CED4DA] space-y-2">
+                      <CheckCircle2 size={28} className="mx-auto text-emerald-600" />
+                      <p className="text-xs font-semibold text-slate-700">No public complaints registered for this work.</p>
+                      <p className="text-[11px] text-slate-500">
+                        Citizens have not lodged any complaints regarding this work ID.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {inspectingWorkComplaints.map(c => (
+                        <div key={c.complaintId} className="bg-white p-3 rounded border border-rose-200 text-xs space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-[#005eb2]">{c.complaintId}</span>
+                            <span className="font-bold text-[10px] uppercase bg-amber-50 text-amber-800 px-2 py-0.5 rounded border border-amber-200">
+                              {c.status}
+                            </span>
+                          </div>
+                          <div className="font-semibold text-slate-800">{c.category}</div>
+                          <p className="italic text-slate-700 text-[11px] bg-amber-50/60 p-2 rounded">
+                            "{c.description}"
+                          </p>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500">
+                            <span>Complainant: <strong>{c.complainantName}</strong></span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInspectingWork(null);
+                                handleOpenComplaintReview(c);
+                              }}
+                              className="text-[#005eb2] font-bold hover:underline cursor-pointer flex items-center gap-1"
+                            >
+                              <Camera size={11} />
+                              <span>Inspect Citizen Proof</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: COMPLIANCE ORDER & STATUS UPDATE */}
+              {inspectingTab === 'action' && (
+                <div className="border border-[#E9ECEF] rounded p-4 bg-white space-y-3 text-xs">
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#000a1f] block uppercase tracking-wider text-[11px]">
+                      Update Official Verification Status:
+                    </label>
+                    <select
+                      value={verificationStatus}
+                      onChange={(e) => setVerificationStatus(e.target.value as VerificationStatus)}
+                      className="w-full px-3 py-2 rounded border border-[#00204a] bg-white text-xs font-semibold text-[#00204a] focus:outline-none"
+                    >
+                      <option value="Under Review">Under Review (Collectorate Scrutiny)</option>
+                      <option value="Inspection Requested">Inspection Requested (Depute Field Engineer)</option>
+                      <option value="Verified">Verified &amp; Cleared (Physical Milestone Validated)</option>
+                      <option value="Rejected">Rejected / Work Halted (Irregularity Found)</option>
+                      <option value="New Alert">New Alert (Pending Initial Assessment)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="font-bold text-[#000a1f] block uppercase tracking-wider text-[11px]">
+                      Inspection Notes / Official Order Remarks:
+                    </label>
+                    <textarea
+                      rows={3}
+                      placeholder="Enter field inspection findings, photo verification remarks, or directives for the implementing agency..."
+                      value={verificationComment}
+                      onChange={(e) => setVerificationComment(e.target.value)}
+                      className="w-full p-2.5 rounded border border-[#CED4DA] text-xs focus:outline-none focus:border-[#00204a]"
+                    />
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Verification Status Choice */}
-            <div className="space-y-1.5 text-xs">
-              <label className="font-bold text-[#495057]">Update Official Status:</label>
-              <select
-                value={verificationStatus}
-                onChange={(e) => setVerificationStatus(e.target.value as VerificationStatus)}
-                className="w-full px-3 py-2 rounded border border-[#CED4DA] bg-white text-xs font-semibold text-[#00204a] focus:outline-none focus:border-[#00204a]"
-              >
-                <option value="Under Review">Under Review (Collectorate Scrutiny)</option>
-                <option value="Inspection Requested">Inspection Requested (Depute Field Engineer)</option>
-                <option value="Verified">Verified & Cleared (Physical Milestone Validated)</option>
-                <option value="Rejected">Rejected / Work Halted (Irregularity Found)</option>
-                <option value="New Alert">New Alert (Pending Initial Assessment)</option>
-              </select>
-            </div>
-
-            {/* Comment / Inspection Notes */}
-            <div className="space-y-1.5 text-xs">
-              <label className="font-bold text-[#495057]">Inspection Notes / Remarks:</label>
-              <textarea
-                rows={3}
-                placeholder="Enter field inspection findings, officer remarks, or instructions for the implementing agency..."
-                value={verificationComment}
-                onChange={(e) => setVerificationComment(e.target.value)}
-                className="w-full p-2.5 rounded border border-[#CED4DA] text-xs focus:outline-none focus:border-[#00204a]"
-              />
-            </div>
-
             {/* Modal Buttons */}
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-[#E9ECEF]">
+            <div className="flex items-center justify-between gap-2.5 pt-3 border-t border-[#E9ECEF] flex-shrink-0">
+              <div className="text-xs text-[#6C757D]">
+                <span>Logged as: <strong>{officerName}</strong></span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setInspectingWork(null)}
+                  className="px-3.5 py-1.5 rounded text-xs font-semibold text-[#6C757D] hover:bg-[#F1F3F5] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveVerification}
+                  disabled={isSavingVerification}
+                  className="btn-primary text-xs py-2 px-4 flex items-center gap-1.5 cursor-pointer font-bold disabled:opacity-50"
+                >
+                  {isSavingVerification ? (
+                    <>
+                      <RotateCw size={13} className="animate-spin" />
+                      <span>Saving Status…</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={14} />
+                      <span>Confirm &amp; Save Status</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9. Universal High-Resolution Lightbox / Image Preview Modal */}
+      {lightboxMedia && (
+        <div className="fixed inset-0 z-60 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#000a1f] text-white rounded-md border border-slate-700 max-w-4xl w-full overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+            {/* Lightbox Header */}
+            <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-[#001433]">
+              <div className="min-w-0 pr-4">
+                <h4 className="font-bold text-sm text-white truncate flex items-center gap-2">
+                  <Camera size={16} className="text-emerald-400 flex-shrink-0" />
+                  <span>{lightboxMedia.title}</span>
+                </h4>
+                {lightboxMedia.subtitle && (
+                  <p className="text-[11px] text-slate-400 truncate mt-0.5">{lightboxMedia.subtitle}</p>
+                )}
+              </div>
               <button
-                onClick={() => setInspectingWork(null)}
-                className="px-3.5 py-1.5 rounded text-xs font-semibold text-[#6C757D] hover:bg-[#F1F3F5]"
+                onClick={() => setLightboxMedia(null)}
+                className="text-slate-400 hover:text-white text-2xl font-bold p-1 leading-none cursor-pointer"
+                title="Close full view"
               >
-                Cancel
+                &times;
               </button>
-              <button
-                onClick={handleSaveVerification}
-                disabled={isSavingVerification}
-                className="btn-primary text-xs py-1.5 px-4 flex items-center gap-1.5"
-              >
-                {isSavingVerification ? 'Saving...' : 'Confirm & Save Status'}
-              </button>
+            </div>
+
+            {/* Media Display Area */}
+            <div className="flex-1 bg-black/90 p-4 flex items-center justify-center overflow-auto min-h-[300px] max-h-[65vh]">
+              {lightboxMedia.isPdf ? (
+                <div className="text-center p-8 space-y-3">
+                  <FileText size={48} className="mx-auto text-blue-400" />
+                  <p className="text-sm font-bold text-white">{lightboxMedia.title}</p>
+                  <p className="text-xs text-slate-400">PDF Document Proof</p>
+                  <a
+                    href={lightboxMedia.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs"
+                  >
+                    <ExternalLink size={14} />
+                    <span>Open Document in New Tab</span>
+                  </a>
+                </div>
+              ) : (
+                <img
+                  src={lightboxMedia.url}
+                  alt={lightboxMedia.title}
+                  className="max-h-[62vh] max-w-full object-contain rounded shadow-lg"
+                />
+              )}
+            </div>
+
+            {/* Lightbox Footer */}
+            <div className="p-3 border-t border-slate-800 flex items-center justify-between bg-[#001433] text-xs text-slate-300">
+              <div className="flex items-center gap-3">
+                {lightboxMedia.uploader && (
+                  <span>Uploaded by: <strong className="text-white">{lightboxMedia.uploader}</strong></span>
+                )}
+                {lightboxMedia.date && (
+                  <span>Date: {new Date(lightboxMedia.date).toLocaleString()}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={lightboxMedia.url}
+                  download={lightboxMedia.title.replace(/[^a-z0-9]+/gi, '_') + '.jpg'}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded text-xs font-bold flex items-center gap-1.5"
+                >
+                  <Download size={13} />
+                  <span>Download Full Resolution</span>
+                </a>
+                <button
+                  onClick={() => setLightboxMedia(null)}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs font-bold cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

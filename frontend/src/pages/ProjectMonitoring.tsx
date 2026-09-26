@@ -1,12 +1,14 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Search, ChevronLeft, ChevronRight, ArrowUpDown,
-  X, SlidersHorizontal, FolderOpen, AlertTriangle
+  X, SlidersHorizontal, FolderOpen, AlertTriangle, Layers
 } from 'lucide-react';
 import { useAppStore } from '../data/store';
 import { useAuthStore } from '../store/authStore';
 import { RiskBadge } from '../components/RiskBadge';
 import { OfficialFilterBar, OfficialFilterState } from '../components/OfficialFilterBar';
+import { CategoryRiskDistribution, type WorkCategoryRiskItem } from '../components/CategoryRiskDistribution';
+import { getAnalyticsObservatory } from '../services/analyticsService';
 import { formatCurrency, truncate } from '../utils';
 import type { EnrichedProject } from '../data/types';
 import { ProjectIntelligenceView } from './ProjectIntelligenceView';
@@ -67,6 +69,32 @@ export function ProjectMonitoring() {
   const [selectedProjectDetail, setSelectedProjectDetail] = useState<EnrichedProject | null>(null);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+
+  // Work Category Risk Distribution state
+  const [showCategoryRisk, setShowCategoryRisk] = useState(false);
+  const [categoryRiskData, setCategoryRiskData] = useState<WorkCategoryRiskItem[]>([]);
+  const [categoryRiskLoading, setCategoryRiskLoading] = useState(false);
+
+  useEffect(() => {
+    if (!showCategoryRisk) return;
+    let isMounted = true;
+    setCategoryRiskLoading(true);
+    getAnalyticsObservatory(isMP ? 'Lok Sabha' : (filters.house || activeHouse), {
+      state: filters.state || lockedState || undefined,
+      district: isDistrictOfficer ? lockedDistrictClean : (monitoringFilter?.district || undefined),
+      constituency: filters.constituency || lockedConstituency || undefined,
+      mpName: filters.mpName || lockedMPName || undefined,
+    }).then(obs => {
+      if (isMounted && obs?.categoryRisk) {
+        setCategoryRiskData(obs.categoryRisk);
+      }
+    }).catch(err => {
+      console.warn('Failed to load category risk distribution in projects page:', err);
+    }).finally(() => {
+      if (isMounted) setCategoryRiskLoading(false);
+    });
+    return () => { isMounted = false; };
+  }, [showCategoryRisk, filters.house, activeHouse, filters.state, filters.constituency, filters.mpName, isMP, lockedState, isDistrictOfficer, lockedDistrictClean, lockedConstituency, lockedMPName, monitoringFilter?.district]);
 
   // Apply pre-filter from GIS Map / drill-down navigation
   useEffect(() => {
@@ -362,7 +390,47 @@ export function ProjectMonitoring() {
               : `${activeTotalCount.toLocaleString('en-IN')} works · Click any work to open Project Intelligence Profile`}
           </p>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setShowCategoryRisk(prev => !prev)}
+          className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border self-start sm:self-auto ${
+            showCategoryRisk
+              ? 'bg-[#00204a] text-white border-[#00204a] shadow-xs'
+              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+          }`}
+          title="Toggle Work Category Risk Distribution Intelligence Panel"
+        >
+          <Layers size={13} />
+          <span>{showCategoryRisk ? 'Hide Category Risk Scores' : 'Work Category Risk Scores'}</span>
+        </button>
       </div>
+
+      {/* ── Collapsible Work Category Risk Score Analysis ── */}
+      {showCategoryRisk && (
+        <CategoryRiskDistribution
+          data={categoryRiskData}
+          loading={categoryRiskLoading}
+          title="Project Ledger — Risk Score by Work Category"
+          subtitle="Explore evaluated risk scores (0–100 scale) across work categories. Click 'Explore' on any category to filter the ledger."
+          scopeLabel={
+            lockedDistrictClean
+              ? `District: ${lockedDistrictClean}`
+              : filters.state
+              ? `State: ${filters.state}`
+              : filters.constituency
+              ? `Constituency: ${filters.constituency}`
+              : filters.mpName
+              ? `MP: ${filters.mpName}`
+              : 'Portfolio Scope'
+          }
+          selectedCategory={filters.category}
+          onSelectCategory={(cat) => {
+            setFilters(f => ({ ...f, category: cat }));
+            setPage(1);
+          }}
+        />
+      )}
 
       {/* ── Official Filter Bar ───────────────────────────────────────── */}
       <div className="panel p-4">

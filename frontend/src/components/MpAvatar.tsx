@@ -63,6 +63,17 @@ export function MpAvatar({
         if (found) setPhotoUrl(found);
       });
     }
+
+    const handlePhotoUpdated = (e: any) => {
+      const detail = e.detail;
+      if (detail && (detail.mpNameOrId === id || detail.mpNameOrId === name || detail.mpNameOrId?.toUpperCase() === name?.toUpperCase())) {
+        setPhotoUrl(detail.photoUrl);
+        setImgFailed(false);
+      }
+    };
+
+    window.addEventListener('mp-photo-updated', handlePhotoUpdated);
+    return () => window.removeEventListener('mp-photo-updated', handlePhotoUpdated);
   }, [name, id, propPhotoUrl]);
 
   const initials = getInitials(name);

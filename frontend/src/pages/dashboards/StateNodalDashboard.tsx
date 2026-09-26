@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { formatCurrency } from '../../utils';
 import { getStateNodalOverview, type StateNodalOverview } from '../../services/projectService';
+import { getAnalyticsObservatory } from '../../services/analyticsService';
+import { CategoryRiskDistribution, type WorkCategoryRiskItem } from '../../components/CategoryRiskDistribution';
 import { PublicService } from '../../services/publicService';
 import type { StateEscalatedComplaintItem } from '../../types/public';
 import { ComparativeIntelligence } from '../../components/ComparativeIntelligence';
@@ -34,6 +36,10 @@ export function StateNodalDashboard() {
   const [viewMode, setViewMode] = useState<'overview' | 'comparative' | 'escalated-grievances'>('overview');
   const [compareDistrictA, setCompareDistrictA] = useState<string>('');
   const [compareDistrictB, setCompareDistrictB] = useState<string>('');
+
+  // Category Risk Distribution State
+  const [categoryData, setCategoryData] = useState<WorkCategoryRiskItem[]>([]);
+  const [categoryLoading, setCategoryLoading] = useState<boolean>(false);
 
   // Escalated Grievances State
   const [escalatedComplaints, setEscalatedComplaints] = useState<StateEscalatedComplaintItem[]>([]);
@@ -103,6 +109,18 @@ export function StateNodalDashboard() {
       setError(err?.message || 'Failed to load state nodal dashboard data');
     } finally {
       setLoading(false);
+    }
+
+    setCategoryLoading(true);
+    try {
+      const obs = await getAnalyticsObservatory(targetHouse, { state: assignedState });
+      if (obs && Array.isArray(obs.categoryRisk)) {
+        setCategoryData(obs.categoryRisk);
+      }
+    } catch (catErr) {
+      console.warn('Error fetching state category risk:', catErr);
+    } finally {
+      setCategoryLoading(false);
     }
   };
 
@@ -906,6 +924,23 @@ export function StateNodalDashboard() {
               </div>
             )}
           </div>
+
+          {/* ── State Work Category Risk Score Analysis ── */}
+          <CategoryRiskDistribution
+            data={categoryData}
+            loading={categoryLoading}
+            title={`Risk Score by Work Category — ${assignedState}`}
+            subtitle={`Sectoral risk score benchmarking (0–100 scale) and vulnerability diagnostics across ${assignedState}.`}
+            scopeLabel={`State: ${assignedState}`}
+            onSelectCategory={(cat) => {
+              setActiveHouse(house);
+              setFilters({
+                state: assignedState,
+                category: cat,
+              });
+              setCurrentPage('monitoring');
+            }}
+          />
         </>
       )}
 

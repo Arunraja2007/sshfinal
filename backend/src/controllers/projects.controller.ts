@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { fetchProjects, fetchProjectById, fetchFilterOptions } from '../services/projects.service.js';
+import { fetchProjects, fetchProjectById, fetchFilterOptions, fetchProjectExecutionDetails } from '../services/projects.service.js';
 import { getUserDataScope } from '../utils/rbac.js';
 
 export async function getProjects(req: Request, res: Response) {
@@ -200,3 +200,20 @@ export async function getFilterOptions(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: error.message });
   }
 }
+
+export async function getProjectExecutionDetails(req: Request, res: Response) {
+  try {
+    const workId = req.params.workId;
+    const house = (req.query.house as 'Lok Sabha' | 'Rajya Sabha') || 'Lok Sabha';
+
+    if (!workId) {
+      return res.status(400).json({ success: false, message: 'workId parameter is required' });
+    }
+
+    const details = await fetchProjectExecutionDetails(workId, house);
+    return res.json({ success: true, data: details });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+

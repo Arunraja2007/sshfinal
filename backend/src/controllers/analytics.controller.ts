@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { fetchDashboardKPIs, fetchCategoryAnalytics, fetchObservatoryAnalytics } from '../services/analytics.service.js';
+import { fetchDashboardKPIs, fetchCategoryAnalytics, fetchObservatoryAnalytics, fetchStateRiskRankings } from '../services/analytics.service.js';
 import { getUserDataScope } from '../utils/rbac.js';
 
 export async function getDashboardKPIs(req: Request, res: Response) {
@@ -124,6 +124,16 @@ export async function getObservatoryAnalytics(req: Request, res: Response) {
     };
 
     const data = await fetchObservatoryAnalytics(house, filters);
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+export async function getStateRiskRankings(req: Request, res: Response) {
+  try {
+    const house = (req.query.house as 'Lok Sabha' | 'Rajya Sabha') || 'Lok Sabha';
+    const data = await fetchStateRiskRankings(house);
     return res.json({ success: true, data });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message });
