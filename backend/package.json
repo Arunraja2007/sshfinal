@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "node build-frontend.js",
+    "build:frontend": "node build-frontend.js",
+    "build:backend": "tsc",
     "start": "node dist/server.js"
   },
   "dependencies": {
