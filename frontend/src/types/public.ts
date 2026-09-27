@@ -286,3 +286,15 @@ export interface StateEscalatedComplaintItem {
   constituency?: string;
 }
 
+export interface EvidenceMediaItem {
+  id?: string;
+  fileName: string;
+  fileType: string;
+  fileSize?: number;
+  storagePath: string;
+  description?: string;
+  uploadedBy?: string;
+  uploaderRole?: string;
+  createdAt?: string;
+}
+

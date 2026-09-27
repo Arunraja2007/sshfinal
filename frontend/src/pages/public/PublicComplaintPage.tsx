@@ -86,14 +86,9 @@ export function PublicComplaintPage({ initialWorkId, onNavigate }: PublicComplai
       return;
     }
     const file = e.target.files[0];
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!allowedTypes.includes(file.type)) {
-      setFileError('Allowed file formats: PNG, JPG, WEBP, or PDF.');
-      setSelectedFile(null);
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setFileError('File size exceeds the 5MB limit.');
+    // Allow up to 25MB media files (images, drone videos, voice notes, PDFs, documents, archives)
+    if (file.size > 25 * 1024 * 1024) {
+      setFileError('File size exceeds the 25MB limit. Please upload a smaller file.');
       setSelectedFile(null);
       return;
     }
@@ -133,7 +128,7 @@ export function PublicComplaintPage({ initialWorkId, onNavigate }: PublicComplai
 
       setResult(submitRes);
 
-      // Attach evidence document / photo proof if citizen uploaded a file
+      // Attach evidence media file (image, video, audio, pdf, doc, archive) if citizen uploaded one
       if (selectedFile) {
         try {
           const reader = new FileReader();
@@ -146,11 +141,12 @@ export function PublicComplaintPage({ initialWorkId, onNavigate }: PublicComplai
           if (dataUrl) {
             await PublicService.attachEvidence(submitRes.complaintId, {
               fileName: selectedFile.name,
-              fileType: selectedFile.type || (selectedFile.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
+              fileType: selectedFile.type || 'application/octet-stream',
               fileSize: selectedFile.size,
               storagePath: dataUrl,
-              description: `Citizen photo/document evidence for complaint regarding project ${workId.trim()}`,
+              description: `Citizen proof/evidence attached for project ${workId.trim()}`,
               uploadedBy: complainantName.trim() || 'Citizen Complainant',
+              uploaderRole: 'Citizen',
             });
           }
         } catch (attachErr) {
@@ -452,23 +448,28 @@ export function PublicComplaintPage({ initialWorkId, onNavigate }: PublicComplai
           </div>
         </div>
 
-        {/* Section 6: Optional Evidence / Photo Upload */}
+        {/* Section 6: Optional Evidence / Multi-Format Media Upload */}
         <div className="space-y-1.5 pt-2 border-t border-[#E9ECEF]">
-          <label className="text-xs font-bold uppercase tracking-wider text-[#000a1f] flex items-center gap-1.5">
-            <Upload size={13} />
-            <span>Attach Evidence / Ground Photo</span>
-            <span className="text-[10px] text-[#747780] font-normal">(Optional, max 5MB)</span>
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold uppercase tracking-wider text-[#000a1f] flex items-center gap-1.5">
+              <Upload size={13} />
+              <span>Attach Proof / Supporting Media</span>
+              <span className="text-[10px] text-[#747780] font-normal">(Optional, max 25MB)</span>
+            </label>
+            <span className="text-[10px] text-[#005eb2] font-medium">
+              Photos, Videos, Audio, PDFs, Documents, Archives
+            </span>
+          </div>
           <input
             type="file"
-            accept="image/png,image/jpeg,image/webp,application/pdf"
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z"
             onChange={handleFileChange}
             className="w-full px-3 py-2 text-xs border border-[#E9ECEF] rounded-sm bg-[#f8f9fa] file:mr-3 file:py-1 file:px-2.5 file:rounded-sm file:border-0 file:text-xs file:font-semibold file:bg-[#005eb2] file:text-white hover:file:bg-[#004b8f] cursor-pointer"
           />
           {fileError && <p className="text-[11px] text-[#DC3545]">{fileError}</p>}
           {selectedFile && (
             <p className="text-[11px] text-emerald-700 flex items-center gap-1 font-medium">
-              <Check size={12} /> Selected: {selectedFile.name} ({(selectedFile.size / 1024).toFixed(0)} KB)
+              <Check size={12} /> Selected: {selectedFile.name} ({(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)
             </p>
           )}
         </div>

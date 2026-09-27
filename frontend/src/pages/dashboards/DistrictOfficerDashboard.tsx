@@ -22,7 +22,8 @@ import {
 import { getAnalyticsObservatory } from '../../services/analyticsService';
 import { CategoryRiskDistribution, type WorkCategoryRiskItem } from '../../components/CategoryRiskDistribution';
 import { PublicService } from '../../services/publicService';
-import type { DistrictComplaintItem, ComplaintEvent } from '../../types/public';
+import type { DistrictComplaintItem, ComplaintEvent, EvidenceMediaItem } from '../../types/public';
+import { EvidenceMediaViewer } from '../../components/EvidenceMediaViewer';
 import type { VerificationStatus } from '../../types';
 import { MpAvatar } from '../../components/MpAvatar';
 
@@ -1613,262 +1614,70 @@ export function DistrictOfficerDashboard() {
                 </button>
               </div>
 
-              {/* TAB 1: CITIZEN ATTACHED PROOFS */}
+              {/* TAB 1: CITIZEN ATTACHMENTS & GROUND PROOFS */}
               {complaintProofsTab === 'citizen' && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider flex items-center gap-1.5">
-                        <Camera size={14} className="text-[#005eb2]" />
-                        <span>Proof &amp; Evidence Attached by Citizen</span>
-                      </h4>
-                      <p className="text-[11px] text-[#747780]">
-                        Photographs and documents submitted by the complainant to substantiate their grievance.
-                      </p>
-                    </div>
-                  </div>
-
-                  {complaintEvidenceList.length === 0 ? (
-                    <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-dashed border-[#CED4DA] space-y-2">
-                      <ImageIcon size={28} className="mx-auto text-slate-400" />
-                      <p className="text-xs font-semibold text-slate-700">No citizen attachments uploaded for this complaint.</p>
-                      <p className="text-[11px] text-slate-500">
-                        The complainant submitted a text grievance without attaching photo or document proof.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {complaintEvidenceList.map((ev: any, idx: number) => {
-                        const isImage = (ev.file_type && ev.file_type.toLowerCase().includes('image')) ||
-                          (ev.file_name && /\.(jpg|jpeg|png|webp|gif)$/i.test(ev.file_name)) ||
-                          (ev.storage_path && ev.storage_path.startsWith('data:image'));
-                        const isPdf = (ev.file_type && ev.file_type.toLowerCase().includes('pdf')) ||
-                          (ev.file_name && /\.pdf$/i.test(ev.file_name)) ||
-                          (ev.storage_path && ev.storage_path.startsWith('data:application/pdf'));
-
-                        return (
-                          <div
-                            key={ev.id || idx}
-                            className="bg-white rounded border border-[#E9ECEF] hover:border-[#005eb2] transition-all shadow-xs p-3 flex flex-col justify-between space-y-2.5"
-                          >
-                            <div className="space-y-2">
-                              {/* Preview Area */}
-                              {isImage && ev.storage_path && ev.storage_path.startsWith('data:') ? (
-                                <div
-                                  onClick={() => setLightboxMedia({
-                                    url: ev.storage_path,
-                                    title: ev.file_name || 'Citizen Complaint Photo Proof',
-                                    subtitle: `Attached for Work ${selectedComplaint.workId}`,
-                                    uploader: ev.uploaded_by || ev.uploadedBy || 'Citizen Complainant',
-                                    date: ev.created_at,
-                                  })}
-                                  className="relative h-36 bg-slate-100 rounded overflow-hidden cursor-pointer group border border-slate-200"
-                                >
-                                  <img
-                                    src={ev.storage_path}
-                                    alt={ev.file_name || 'Citizen proof'}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                  />
-                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-bold">
-                                    <ZoomIn size={16} />
-                                    <span>Click to Enlarge</span>
-                                  </div>
-                                  <span className="absolute top-1.5 left-1.5 bg-blue-900/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs">
-                                    Citizen Photo Proof
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="h-24 bg-slate-50 rounded border border-slate-200 flex items-center justify-center p-3 text-center">
-                                  <div className="space-y-1">
-                                    <FileText size={24} className="mx-auto text-[#005eb2]" />
-                                    <span className="text-[10px] font-bold text-slate-700 block truncate max-w-[200px]">
-                                      {ev.file_name || 'Attached Evidence Document'}
-                                    </span>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Metadata */}
-                              <div>
-                                <div className="font-bold text-xs text-[#000a1f] truncate" title={ev.file_name}>
-                                  {ev.file_name || 'Citizen Attachment'}
-                                </div>
-                                <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between">
-                                  <span>By: <strong>{ev.uploaded_by || ev.uploadedBy || 'Citizen'}</strong></span>
-                                  {ev.created_at && (
-                                    <span>{new Date(ev.created_at).toLocaleDateString()}</span>
-                                  )}
-                                </div>
-                                {ev.description && (
-                                  <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 mt-1 italic">
-                                    "{ev.description}"
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Action links */}
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
-                              {ev.storage_path && ev.storage_path.startsWith('data:') ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setLightboxMedia({
-                                    url: ev.storage_path,
-                                    title: ev.file_name || 'Citizen Complaint Proof',
-                                    subtitle: `Attached for Work ${selectedComplaint.workId}`,
-                                    uploader: ev.uploaded_by || ev.uploadedBy || 'Citizen Complainant',
-                                    date: ev.created_at,
-                                    isPdf: isPdf,
-                                  })}
-                                  className="text-[#005eb2] hover:underline font-bold flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Eye size={12} />
-                                  <span>View Proof</span>
-                                </button>
-                              ) : (
-                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                                  Verified Record
-                                </span>
-                              )}
-
-                              {ev.storage_path && ev.storage_path.startsWith('data:') && (
-                                <a
-                                  href={ev.storage_path}
-                                  download={ev.file_name || 'citizen_proof.jpg'}
-                                  className="text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Download size={12} />
-                                  <span>Download</span>
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <EvidenceMediaViewer
+                    items={(complaintEvidenceList || []).map((ev: any) => ({
+                      id: ev.id,
+                      fileName: ev.fileName || ev.file_name || 'Citizen Attachment',
+                      fileType: ev.fileType || ev.file_type || 'image/jpeg',
+                      fileSize: ev.fileSize || ev.file_size || 0,
+                      storagePath: ev.storagePath || ev.storage_path || '',
+                      description: ev.description || '',
+                      uploadedBy: ev.uploadedBy || ev.uploaded_by || 'Citizen Complainant',
+                      uploaderRole: ev.uploaderRole || 'Citizen',
+                      createdAt: ev.createdAt || ev.created_at,
+                    }))}
+                    title="Proof & Evidence Attached by Citizen (Any Media Format)"
+                    emptyMessage="No citizen attachments uploaded for this complaint."
+                    allowDownload={true}
+                  />
                 </div>
               )}
 
               {/* TAB 2: IMPLEMENTING AGENCY PROJECT PROOFS */}
               {complaintProofsTab === 'agency' && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider flex items-center gap-1.5">
-                        <Building2 size={14} className="text-emerald-700" />
-                        <span>Implementing Agency Ground Proofs &amp; Field Photos for Work {selectedComplaint.workId}</span>
-                      </h4>
-                      <p className="text-[11px] text-[#747780]">
-                        Official execution proof submitted by the executing agency. Cross-verify with citizen's allegation.
-                      </p>
-                    </div>
-                  </div>
+                  <EvidenceMediaViewer
+                    items={(complaintAgencyEvidence || []).map((ev: any) => ({
+                      id: ev.id,
+                      fileName: ev.file_name || 'Agency Evidence Record',
+                      fileType: ev.file_type || 'image/jpeg',
+                      fileSize: ev.file_size || 0,
+                      storagePath: ev.storage_path || '',
+                      description: ev.description || '',
+                      uploadedBy: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
+                      uploaderRole: 'Implementing Agency',
+                      createdAt: ev.created_at,
+                    }))}
+                    title={`Implementing Agency Ground Proofs & Field Photos for Work ${selectedComplaint.workId}`}
+                    emptyMessage="No ground proof uploaded yet by the Implementing Agency."
+                    allowDownload={true}
+                  />
 
-                  {complaintAgencyLoading ? (
-                    <div className="py-8 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
-                      <RotateCw size={16} className="animate-spin text-[#00204a]" />
-                      <span>Fetching agency evidence from database…</span>
-                    </div>
-                  ) : complaintAgencyEvidence.length === 0 && complaintAgencyUpdates.length === 0 ? (
-                    <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-dashed border-[#CED4DA] space-y-2">
-                      <Building2 size={28} className="mx-auto text-slate-400" />
-                      <p className="text-xs font-semibold text-slate-700">No ground proof uploaded yet by the Implementing Agency.</p>
-                      <p className="text-[11px] text-slate-500">
-                        You can dispatch an administrative order to the agency requesting photo proof and execution explanation.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {/* Agency Evidence Cards */}
-                      {complaintAgencyEvidence.length > 0 && (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {complaintAgencyEvidence.map((ev, idx) => {
-                            const isImage = (ev.file_type && ev.file_type.toLowerCase().includes('photo')) ||
-                              (ev.file_type && ev.file_type.toLowerCase().includes('image')) ||
-                              (ev.file_name && /\.(jpg|jpeg|png|webp|gif)$/i.test(ev.file_name)) ||
-                              (ev.storage_path && ev.storage_path.startsWith('data:image'));
-
-                            return (
-                              <div
-                                key={ev.id || idx}
-                                className="bg-white rounded border border-[#E9ECEF] hover:border-emerald-600 transition-all shadow-xs p-3 space-y-2"
-                              >
-                                {isImage && ev.storage_path && ev.storage_path.startsWith('data:') ? (
-                                  <div
-                                    onClick={() => setLightboxMedia({
-                                      url: ev.storage_path,
-                                      title: ev.file_name || 'Agency Site Progress Photograph',
-                                      subtitle: `Work ID: ${selectedComplaint.workId} · Agency: ${ev.agency_name || 'Executing Authority'}`,
-                                      uploader: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
-                                      date: ev.created_at,
-                                    })}
-                                    className="relative h-32 bg-slate-100 rounded overflow-hidden cursor-pointer group border border-slate-200"
-                                  >
-                                    <img
-                                      src={ev.storage_path}
-                                      alt={ev.file_name}
-                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                    />
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1 text-white text-xs font-bold">
-                                      <ZoomIn size={14} />
-                                      <span>Enlarge Field Photo</span>
-                                    </div>
-                                    <span className="absolute top-1.5 left-1.5 bg-emerald-800 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
-                                      Agency Field Photo
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <div className="h-20 bg-emerald-50/50 rounded border border-emerald-100 flex items-center gap-2.5 p-2.5">
-                                    <FileText size={22} className="text-emerald-700 flex-shrink-0" />
-                                    <div className="min-w-0">
-                                      <div className="font-bold text-xs text-slate-800 truncate">{ev.file_name}</div>
-                                      <div className="text-[10px] text-emerald-800 font-medium">{ev.file_type}</div>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div>
-                                  <div className="font-bold text-xs text-slate-900 truncate">{ev.file_name}</div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5">
-                                    {ev.file_type} · {new Date(ev.created_at).toLocaleDateString()}
-                                  </div>
-                                  {ev.description && (
-                                    <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 mt-1">
-                                      {ev.description}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Agency Execution Updates History */}
-                      {complaintAgencyUpdates.length > 0 && (
-                        <div className="border border-emerald-200 rounded-md p-3 bg-emerald-50/30 space-y-2">
-                          <span className="text-[11px] font-bold uppercase text-emerald-900 block tracking-wider">
-                            Latest Agency Ground Execution Submissions ({complaintAgencyUpdates.length})
-                          </span>
-                          <div className="space-y-2">
-                            {complaintAgencyUpdates.map((up, idx) => (
-                              <div key={up.id || idx} className="bg-white p-2.5 rounded border border-emerald-100 text-xs space-y-1">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-emerald-900">{up.milestone_status}</span>
-                                  <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                    {up.physical_progress}% Physical Progress
-                                  </span>
-                                </div>
-                                <p className="text-slate-700 text-[11px]">{up.remarks}</p>
-                                <div className="text-[10px] text-slate-400">
-                                  Measurement Date: {up.update_date} · Submitted: {new Date(up.submitted_at).toLocaleDateString()}
-                                </div>
-                              </div>
-                            ))}
+                  {/* Agency Execution Updates History */}
+                  {complaintAgencyUpdates.length > 0 && (
+                    <div className="border border-emerald-200 rounded-md p-3 bg-emerald-50/30 space-y-2 mt-4">
+                      <span className="text-[11px] font-bold uppercase text-emerald-900 block tracking-wider">
+                        Latest Agency Ground Execution Submissions ({complaintAgencyUpdates.length})
+                      </span>
+                      <div className="space-y-2">
+                        {complaintAgencyUpdates.map((up, idx) => (
+                          <div key={up.id || idx} className="bg-white p-2.5 rounded border border-emerald-100 text-xs space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-emerald-900">{up.milestone_status}</span>
+                              <span className="font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                {up.physical_progress}% Physical Progress
+                              </span>
+                            </div>
+                            <p className="text-slate-700 text-[11px]">{up.remarks}</p>
+                            <div className="text-[10px] text-slate-400">
+                              Measurement Date: {up.update_date} · Submitted: {new Date(up.submitted_at).toLocaleDateString()}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2234,135 +2043,28 @@ export function DistrictOfficerDashboard() {
               {/* TAB 1: AGENCY GROUND PHOTOS & PROOFS */}
               {inspectingTab === 'evidence' && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider flex items-center gap-1.5">
-                        <Camera size={14} className="text-emerald-700" />
-                        <span>Implementing Agency Ground Proofs &amp; Photo Submissions</span>
-                      </h4>
-                      <p className="text-[11px] text-[#747780]">
-                        Photographs, site inspection records, and measurement documents submitted by the implementing agency.
-                      </p>
-                    </div>
-                  </div>
-
                   {inspectingLoadingEvidence ? (
                     <div className="py-8 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
                       <RotateCw size={16} className="animate-spin text-[#00204a]" />
                       <span>Loading ground proofs &amp; photographs from database…</span>
                     </div>
-                  ) : inspectingWorkEvidence.length === 0 ? (
-                    <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-dashed border-[#CED4DA] space-y-2">
-                      <Camera size={28} className="mx-auto text-slate-400" />
-                      <p className="text-xs font-semibold text-slate-700">No ground photos or verification certificates uploaded yet by the agency.</p>
-                      <p className="text-[11px] text-slate-500">
-                        The implementing authority has not attached field photographs or inspection proofs for this work record.
-                      </p>
-                    </div>
                   ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {inspectingWorkEvidence.map((ev, idx) => {
-                        const isImage = (ev.file_type && ev.file_type.toLowerCase().includes('photo')) ||
-                          (ev.file_type && ev.file_type.toLowerCase().includes('image')) ||
-                          (ev.file_name && /\.(jpg|jpeg|png|webp|gif)$/i.test(ev.file_name)) ||
-                          (ev.storage_path && ev.storage_path.startsWith('data:image'));
-
-                        return (
-                          <div
-                            key={ev.id || idx}
-                            className="bg-white rounded border border-[#E9ECEF] hover:border-emerald-600 transition-all shadow-xs p-3 space-y-2.5 flex flex-col justify-between"
-                          >
-                            <div className="space-y-2">
-                              {isImage && ev.storage_path && ev.storage_path.startsWith('data:') ? (
-                                <div
-                                  onClick={() => setLightboxMedia({
-                                    url: ev.storage_path,
-                                    title: ev.file_name || 'Ground Progress Photo Proof',
-                                    subtitle: `Work ID: ${inspectingWork.work_id} · ${ev.file_type}`,
-                                    uploader: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
-                                    date: ev.created_at,
-                                  })}
-                                  className="relative h-36 bg-slate-100 rounded overflow-hidden cursor-pointer group border border-slate-200"
-                                >
-                                  <img
-                                    src={ev.storage_path}
-                                    alt={ev.file_name}
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                  />
-                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 text-white text-xs font-bold">
-                                    <ZoomIn size={16} />
-                                    <span>Enlarge Photo</span>
-                                  </div>
-                                  <span className="absolute top-1.5 left-1.5 bg-emerald-800 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs">
-                                    Ground Photo Proof
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="h-24 bg-emerald-50/50 rounded border border-emerald-100 flex items-center justify-center p-3 text-center">
-                                  <div className="space-y-1">
-                                    <FileText size={24} className="mx-auto text-emerald-700" />
-                                    <span className="text-[10px] font-bold text-slate-800 block truncate max-w-[220px]">
-                                      {ev.file_name}
-                                    </span>
-                                  </div>
-                                </div>
-                              )}
-
-                              <div>
-                                <div className="font-bold text-xs text-[#000a1f] truncate" title={ev.file_name}>
-                                  {ev.file_name}
-                                </div>
-                                <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between">
-                                  <span className="font-semibold text-emerald-800">{ev.file_type}</span>
-                                  {ev.created_at && (
-                                    <span>{new Date(ev.created_at).toLocaleDateString()}</span>
-                                  )}
-                                </div>
-                                {ev.description && (
-                                  <p className="text-[11px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-100 mt-1">
-                                    {ev.description}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px]">
-                              {ev.storage_path && ev.storage_path.startsWith('data:') ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setLightboxMedia({
-                                    url: ev.storage_path,
-                                    title: ev.file_name || 'Ground Progress Photo Proof',
-                                    subtitle: `Work ID: ${inspectingWork.work_id} · ${ev.file_type}`,
-                                    uploader: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
-                                    date: ev.created_at,
-                                  })}
-                                  className="text-emerald-700 hover:underline font-bold flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Eye size={12} />
-                                  <span>View Photo Proof</span>
-                                </button>
-                              ) : (
-                                <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                                  Registered Record
-                                </span>
-                              )}
-
-                              {ev.storage_path && ev.storage_path.startsWith('data:') && (
-                                <a
-                                  href={ev.storage_path}
-                                  download={ev.file_name || 'agency_proof.jpg'}
-                                  className="text-slate-600 hover:text-slate-900 font-bold flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Download size={12} />
-                                  <span>Download</span>
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <EvidenceMediaViewer
+                      items={(inspectingWorkEvidence || []).map((ev: any) => ({
+                        id: ev.id,
+                        fileName: ev.file_name || 'Ground Progress Proof',
+                        fileType: ev.file_type || 'image/jpeg',
+                        fileSize: ev.file_size || 0,
+                        storagePath: ev.storage_path || '',
+                        description: ev.description || '',
+                        uploadedBy: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
+                        uploaderRole: 'Implementing Agency',
+                        createdAt: ev.created_at,
+                      }))}
+                      title="Implementing Agency Ground Proofs & Field Photos (Any Format)"
+                      emptyMessage="No ground photos or verification certificates uploaded yet by the agency."
+                      allowDownload={true}
+                    />
                   )}
                 </div>
               )}

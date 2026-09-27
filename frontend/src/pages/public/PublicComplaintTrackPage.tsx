@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PublicService } from '../../services/publicService';
-import type { PublicComplaintTrackingResult } from '../../types/public';
+import type { PublicComplaintTrackingResult, EvidenceMediaItem } from '../../types/public';
+import { EvidenceMediaViewer } from '../../components/EvidenceMediaViewer';
 import { formatDate } from '../../utils';
 import {
   Search,
@@ -34,6 +35,7 @@ export function PublicComplaintTrackPage({ initialCid, onNavigate }: PublicCompl
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [complaint, setComplaint] = useState<PublicComplaintTrackingResult | null>(null);
+  const [evidenceList, setEvidenceList] = useState<EvidenceMediaItem[]>([]);
 
   // Clarification form state
   const [clarificationText, setClarificationText] = useState('');
@@ -51,6 +53,7 @@ export function PublicComplaintTrackPage({ initialCid, onNavigate }: PublicCompl
     if (e) e.preventDefault();
     setError(null);
     setComplaint(null);
+    setEvidenceList([]);
     setClarificationSuccess(null);
     setClarificationError(null);
 
@@ -66,8 +69,12 @@ export function PublicComplaintTrackPage({ initialCid, onNavigate }: PublicCompl
 
     try {
       setLoading(true);
-      const res = await PublicService.trackComplaint(complaintId.trim(), verificationValue.trim());
+      const [res, evList] = await Promise.all([
+        PublicService.trackComplaint(complaintId.trim(), verificationValue.trim()),
+        PublicService.getEvidence(complaintId.trim()).catch(() => []),
+      ]);
       setComplaint(res);
+      setEvidenceList(evList || []);
     } catch (err: any) {
       console.error('Tracking error:', err);
       setError(err.message || 'Unable to verify complaint. Please check your credentials and try again.');
@@ -375,6 +382,16 @@ export function PublicComplaintTrackPage({ initialCid, onNavigate }: PublicCompl
               <span>Last Status Update: {formatDate(complaint.updatedAt)}</span>
               <span>Reviewing Authority: District Administration</span>
             </div>
+          </div>
+
+          {/* Attached Evidence & Proof Dossier (Images, Videos, Audio, Documents) */}
+          <div className="pt-2">
+            <EvidenceMediaViewer
+              items={evidenceList}
+              title="Verified Evidence & Ground Proofs"
+              emptyMessage="No media proof files attached to this complaint."
+              allowDownload={true}
+            />
           </div>
 
           {/* Public-Safe Case Timeline */}

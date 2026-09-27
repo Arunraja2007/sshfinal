@@ -8,6 +8,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const COMPLAINTS_FILE = path.resolve(__dirname, '../data/complaints.store.json');
 const EVENTS_FILE = path.resolve(__dirname, '../data/complaint_events.store.json');
+const EVIDENCE_FILE = path.resolve(__dirname, '../data/complaint_evidence.store.json');
+
+// Helper to ensure local fallback evidence store exists
+function loadLocalEvidence(): any[] {
+  try {
+    if (fs.existsSync(EVIDENCE_FILE)) {
+      const raw = fs.readFileSync(EVIDENCE_FILE, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.warn('[PublicService] Could not read local evidence store:', e);
+  }
+  return [];
+}
+
+function saveLocalEvidence(item: any) {
+  try {
+    const list = loadLocalEvidence();
+    list.push(item);
+    fs.writeFileSync(EVIDENCE_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('[PublicService] Could not persist local evidence:', e);
+  }
+}
 
 // Helper to ensure local fallback complaints store exists
 function loadLocalComplaints(): any[] {
@@ -1628,5 +1652,117 @@ export class PublicService {
       updates.status === 'CLOSED' ? 'CLOSE' : 'START_REVIEW',
       updates
     );
+  }
+
+  /**
+   * Attach evidence / proof document to a complaint
+   */
+  static async attachComplaintEvidence(
+    complaintId: string,
+    payload: {
+      fileName: string;
+      fileType: string;
+      fileSize?: number;
+      storagePath?: string;
+      description?: string;
+      uploadedBy?: string;
+      uploaderRole?: string;
+    }
+  ) {
+    const cleanCid = sanitizeText(complaintId).toUpperCase().trim();
+    const id = `EV-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const now = new Date().toISOString();
+
+    const record = {
+      id,
+      complaint_id: cleanCid,
+      file_name: sanitizeText(payload.fileName) || 'Evidence-File',
+      file_type: payload.fileType || 'application/octet-stream',
+      file_size: Number(payload.fileSize) || 0,
+      storage_path: payload.storagePath || '',
+      description: sanitizeText(payload.description) || '',
+      uploaded_by: sanitizeText(payload.uploadedBy) || 'Citizen / Officer',
+      uploader_role: sanitizeText(payload.uploaderRole) || 'CITIZEN',
+      created_at: now,
+    };
+
+    // 1. Try Supabase insert
+    try {
+      await supabase.from('complaint_evidence').insert([record]);
+    } catch (err) {
+      console.warn('[PublicService] Supabase insert into complaint_evidence failed:', err);
+    }
+
+    // 2. Persist locally
+    saveLocalEvidence(record);
+
+    // 3. Record event in timeline
+    await recordComplaintEvent({
+      complaint_id: cleanCid,
+      actor_name: payload.uploadedBy || 'Citizen',
+      actor_role: payload.uploaderRole || 'CITIZEN',
+      event_type: 'EVIDENCE_ATTACHED',
+      status: 'UNDER REVIEW',
+      remarks: `Evidence document/photo attached: ${payload.fileName} (${payload.description || 'Supporting Proof'})`,
+      public_safe: true,
+      metadata: {
+        fileName: payload.fileName,
+        fileType: payload.fileType,
+        fileSize: payload.fileSize,
+        evidenceId: id,
+      },
+    });
+
+    return {
+      success: true,
+      evidenceId: id,
+      complaintId: cleanCid,
+      fileName: record.file_name,
+      fileType: record.file_type,
+      storagePath: record.storage_path,
+      createdAt: record.created_at,
+    };
+  }
+
+  /**
+   * Get all evidence documents / media proofs for a complaint
+   */
+  static async getComplaintEvidence(complaintId: string) {
+    const cleanCid = sanitizeText(complaintId).toUpperCase().trim();
+    let evidenceList: any[] = [];
+
+    // 1. Try Supabase fetch
+    try {
+      const { data, error } = await supabase
+        .from('complaint_evidence')
+        .select('*')
+        .eq('complaint_id', cleanCid)
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        evidenceList = data;
+      }
+    } catch (err) {
+      console.warn('[PublicService] Supabase fetch complaint_evidence failed:', err);
+    }
+
+    // 2. Fallback to local store
+    if (evidenceList.length === 0) {
+      const local = loadLocalEvidence();
+      evidenceList = local.filter((e: any) => e.complaint_id === cleanCid);
+    }
+
+    return evidenceList.map((e: any) => ({
+      id: e.id,
+      complaintId: e.complaint_id,
+      fileName: e.file_name || e.fileName,
+      fileType: e.file_type || e.fileType || 'application/octet-stream',
+      fileSize: e.file_size || e.fileSize || 0,
+      storagePath: e.storage_path || e.storagePath || '',
+      description: e.description || '',
+      uploadedBy: e.uploaded_by || e.uploadedBy || 'Citizen',
+      uploaderRole: e.uploader_role || e.uploaderRole || 'CITIZEN',
+      createdAt: e.created_at || e.createdAt,
+    }));
   }
 }

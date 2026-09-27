@@ -14,7 +14,8 @@ import { getStateNodalOverview, type StateNodalOverview } from '../../services/p
 import { getAnalyticsObservatory } from '../../services/analyticsService';
 import { CategoryRiskDistribution, type WorkCategoryRiskItem } from '../../components/CategoryRiskDistribution';
 import { PublicService } from '../../services/publicService';
-import type { StateEscalatedComplaintItem } from '../../types/public';
+import type { StateEscalatedComplaintItem, EvidenceMediaItem } from '../../types/public';
+import { EvidenceMediaViewer } from '../../components/EvidenceMediaViewer';
 import { ComparativeIntelligence } from '../../components/ComparativeIntelligence';
 import { MpAvatar } from '../../components/MpAvatar';
 
@@ -45,6 +46,7 @@ export function StateNodalDashboard() {
   const [escalatedComplaints, setEscalatedComplaints] = useState<StateEscalatedComplaintItem[]>([]);
   const [escalatedLoading, setEscalatedLoading] = useState<boolean>(false);
   const [selectedEscalatedComplaint, setSelectedEscalatedComplaint] = useState<StateEscalatedComplaintItem | null>(null);
+  const [escalatedEvidence, setEscalatedEvidence] = useState<EvidenceMediaItem[]>([]);
   const [stateDirectionInput, setStateDirectionInput] = useState<string>('');
   const [stateSubmitting, setStateSubmitting] = useState<boolean>(false);
   const [stateSuccessMsg, setStateSuccessMsg] = useState<string | null>(null);
@@ -61,6 +63,16 @@ export function StateNodalDashboard() {
       setEscalatedLoading(false);
     }
   }, [assignedState]);
+
+  useEffect(() => {
+    if (selectedEscalatedComplaint) {
+      PublicService.getEvidence(selectedEscalatedComplaint.complaintId)
+        .then((evList) => setEscalatedEvidence(evList || []))
+        .catch(() => setEscalatedEvidence([]));
+    } else {
+      setEscalatedEvidence([]);
+    }
+  }, [selectedEscalatedComplaint]);
 
   useEffect(() => {
     fetchEscalatedComplaints();
@@ -965,14 +977,24 @@ export function StateNodalDashboard() {
               </button>
             </div>
 
-            <div className="bg-[#F8F9FA] p-3 rounded border border-[#E9ECEF] text-xs space-y-1.5">
+            <div className="bg-[#F8F9FA] p-3 rounded border border-[#E9ECEF] text-xs space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Complaint: <strong className="font-mono text-purple-800">{selectedEscalatedComplaint.complaintId}</strong></span>
                 <span className="text-slate-500">Work ID: <strong className="font-mono text-[#0066CC]">{selectedEscalatedComplaint.workId}</strong></span>
               </div>
               <p className="font-semibold text-[#000a1f]">{selectedEscalatedComplaint.workDescription}</p>
-              <div className="p-2 rounded bg-amber-50 border border-amber-200 text-amber-950 text-[11px]">
+              <div className="p-2.5 rounded bg-amber-50 border border-amber-200 text-amber-950 text-[11px]">
                 <strong>Citizen Allegation:</strong> "{selectedEscalatedComplaint.description}"
+              </div>
+
+              {/* Multi-Format Proof / Evidence Viewer */}
+              <div className="pt-1">
+                <EvidenceMediaViewer
+                  items={escalatedEvidence}
+                  title="Evidence Dossier & Field Proofs"
+                  emptyMessage="No media files attached to this escalated complaint."
+                  allowDownload={true}
+                />
               </div>
             </div>
 

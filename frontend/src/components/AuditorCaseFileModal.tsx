@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '../utils';
 import { RiskBadge, RiskScoreRing } from './RiskBadge';
+import { EvidenceMediaViewer, EvidenceMediaItem } from './EvidenceMediaViewer';
+import { PublicService } from '../services/publicService';
+import { getProjectExecutionEvidence } from '../services/projectService';
 import {
   getAuditorCaseFile,
   updateAuditorStatus,
@@ -30,6 +33,7 @@ export function AuditorCaseFileModal({ workId, house, onClose, onStatusUpdated }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [caseFile, setCaseFile] = useState<CaseFileDetail | null>(null);
+  const [evidenceList, setEvidenceList] = useState<EvidenceMediaItem[]>([]);
 
   // Inspection Request Modal sub-state
   const [showInspectionModal, setShowInspectionModal] = useState(false);
@@ -54,9 +58,47 @@ export function AuditorCaseFileModal({ workId, house, onClose, onStatusUpdated }
       setLoading(true);
       setError(null);
       try {
-        const detail = await getAuditorCaseFile(workId, house);
+        const [detail, pubEvidence, execEvidence] = await Promise.all([
+          getAuditorCaseFile(workId, house),
+          PublicService.getEvidence(workId).catch(() => []),
+          getProjectExecutionEvidence(workId, house).catch(() => ({ evidence: [], updates: [] })),
+        ]);
         if (mounted) {
           setCaseFile(detail);
+
+          // Merge all evidence items
+          const items: EvidenceMediaItem[] = [];
+          if (Array.isArray(pubEvidence)) {
+            items.push(...pubEvidence.map((e: any) => ({
+              id: e.id,
+              fileName: e.fileName || e.file_name || 'Evidence File',
+              fileType: e.fileType || e.file_type || 'application/octet-stream',
+              fileSize: e.fileSize || e.file_size || 0,
+              storagePath: e.storagePath || e.storage_path || '',
+              description: e.description || '',
+              uploadedBy: e.uploadedBy || e.uploaded_by || 'Citizen / District',
+              uploaderRole: e.uploaderRole || 'Citizen',
+              createdAt: e.createdAt || e.created_at,
+            })));
+          }
+          if (execEvidence && Array.isArray(execEvidence.evidence)) {
+            for (const ev of execEvidence.evidence) {
+              if (!items.some(x => x.fileName === ev.file_name)) {
+                items.push({
+                  id: ev.id,
+                  fileName: ev.file_name || 'Agency Proof Document',
+                  fileType: ev.file_type || 'image/jpeg',
+                  fileSize: ev.file_size || 0,
+                  storagePath: ev.storage_path || '',
+                  description: ev.description || '',
+                  uploadedBy: ev.uploaded_by || ev.agency_name || 'Implementing Agency',
+                  uploaderRole: 'Implementing Agency',
+                  createdAt: ev.created_at,
+                });
+              }
+            }
+          }
+          setEvidenceList(items);
         }
       } catch (err: any) {
         if (mounted) {
@@ -576,37 +618,15 @@ export function AuditorCaseFileModal({ workId, house, onClose, onStatusUpdated }
               </div>
 
               {/* ==================================================================== */}
-              {/* 4. EVIDENCE SECTION */}
+              {/* 4. EVIDENCE & MULTI-FORMAT MEDIA SECTION */}
               {/* ==================================================================== */}
               <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <div className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                    <FileCheck className="w-4 h-4 text-purple-400" />
-                    <span>Evidence & Supporting Documentation</span>
-                  </div>
-                  <span className="text-[10px] text-slate-400">Field Dossier</span>
-                </div>
-
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-lg bg-slate-800 text-slate-400">
-                      <FileText className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-white">Central Portal Repository</h4>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        {caseFile?.evidence?.available
-                          ? 'Supporting documents attached'
-                          : 'Evidence not available'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-xs text-slate-400 text-right max-w-sm">
-                    <span className="inline-block px-2.5 py-1 rounded bg-slate-900 text-slate-300 text-[11px] font-medium border border-slate-800">
-                      Missing documentation is an administrative signal and does NOT automatically imply irregularity.
-                    </span>
-                  </div>
-                </div>
+                <EvidenceMediaViewer
+                  items={evidenceList}
+                  title="Multi-Format Ground Evidence & Field Records"
+                  emptyMessage="No ground proofs, inspection recordings, or citizen media attached yet."
+                  allowDownload={true}
+                />
               </div>
 
               {/* ==================================================================== */}

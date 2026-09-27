@@ -32,7 +32,8 @@ import {
 import { formatCurrency } from '../../utils';
 import { ImplementingAgencyService } from '../../services/implementingAgencyService';
 import { PublicService } from '../../services/publicService';
-import type { AgencyComplaintItem } from '../../types/public';
+import type { AgencyComplaintItem, EvidenceMediaItem } from '../../types/public';
+import { EvidenceMediaViewer } from '../../components/EvidenceMediaViewer';
 import type {
   AgencyKPIs,
   AgencyProjectItem,
@@ -61,11 +62,13 @@ export function ImplementingAgencyDashboard() {
   const [agencyComplaints, setAgencyComplaints] = useState<AgencyComplaintItem[]>([]);
   const [complaintsLoading, setComplaintsLoading] = useState<boolean>(false);
   const [selectedAgencyComplaint, setSelectedAgencyComplaint] = useState<AgencyComplaintItem | null>(null);
+  const [agencyComplaintEvidence, setAgencyComplaintEvidence] = useState<EvidenceMediaItem[]>([]);
   const [agencyRemarksInput, setAgencyRemarksInput] = useState<string>('');
   const [agencyProgressInput, setAgencyProgressInput] = useState<number>(50);
   const [agencySubmitting, setAgencySubmitting] = useState<boolean>(false);
   const [agencySuccessMsg, setAgencySuccessMsg] = useState<string | null>(null);
   const [agencyErrorMsg, setAgencyErrorMsg] = useState<string | null>(null);
+  const [selectedEvidenceFile, setSelectedEvidenceFile] = useState<File | null>(null);
 
 
   // Assigned Works Table State
@@ -340,13 +343,24 @@ export function ImplementingAgencyDashboard() {
     }
   };
 
+  useEffect(() => {
+    if (selectedAgencyComplaint) {
+      PublicService.getEvidence(selectedAgencyComplaint.complaintId)
+        .then((evList) => setAgencyComplaintEvidence(evList || []))
+        .catch(() => setAgencyComplaintEvidence([]));
+    } else {
+      setAgencyComplaintEvidence([]);
+    }
+  }, [selectedAgencyComplaint]);
+
   // Handle Attach Evidence Record
   const handleAttachEvidence = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedWorkId || !selectedWorkHouse) return;
 
-    if (!evidenceFileName.trim()) {
-      setEvidenceError('Please enter a valid document or photograph name.');
+    const title = evidenceFileName.trim() || selectedEvidenceFile?.name;
+    if (!title) {
+      setEvidenceError('Please select a file or enter a valid document / photo title.');
       return;
     }
 
@@ -355,22 +369,44 @@ export function ImplementingAgencyDashboard() {
     setEvidenceSuccess(null);
 
     try {
-      // Secure storage mock/path pattern
-      const safeSlug = evidenceFileName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
-      const mockStoragePath = `evidence/${selectedWorkHouse.toLowerCase()}/${selectedWorkId}/${Date.now()}_${safeSlug}.pdf`;
+      let dataUrl = '';
+      if (selectedEvidenceFile) {
+        const reader = new FileReader();
+        const readPromise = new Promise<string>((resolve) => {
+          reader.onload = () => resolve((reader.result as string) || '');
+          reader.onerror = () => resolve('');
+        });
+        reader.readAsDataURL(selectedEvidenceFile);
+        dataUrl = await readPromise;
+      }
+
+      const safeSlug = title.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+      const storagePath = dataUrl || `evidence/${selectedWorkHouse.toLowerCase()}/${selectedWorkId}/${Date.now()}_${safeSlug}.pdf`;
 
       await ImplementingAgencyService.uploadEvidence(selectedWorkId, {
         house: selectedWorkHouse,
-        file_name: evidenceFileName.trim(),
-        file_type: evidenceType,
-        storage_path: mockStoragePath,
+        file_name: title,
+        file_type: selectedEvidenceFile?.type || evidenceType,
+        storage_path: storagePath,
         description: evidenceDesc || undefined,
-        file_size_bytes: 1024 * 1024 * 2, // 2 MB
+        file_size_bytes: selectedEvidenceFile?.size || 1024 * 1024 * 2,
       });
 
-      setEvidenceSuccess('Supporting evidence securely recorded and linked to this assigned work.');
+      // Also attach to public service registry so other roles can inspect
+      await PublicService.attachEvidence(selectedWorkId, {
+        fileName: title,
+        fileType: selectedEvidenceFile?.type || evidenceType,
+        fileSize: selectedEvidenceFile?.size || 1024 * 1024 * 2,
+        storagePath: storagePath,
+        description: evidenceDesc || `Implementing Agency uploaded evidence for ${selectedWorkId}`,
+        uploadedBy: agencyName,
+        uploaderRole: 'Implementing Agency',
+      });
+
+      setEvidenceSuccess('Supporting proof & evidence securely recorded and linked to this assigned work.');
       setEvidenceFileName('');
       setEvidenceDesc('');
+      setSelectedEvidenceFile(null);
 
       // Refresh workspace data
       const updatedData = await ImplementingAgencyService.getProjectDetails(selectedWorkId, selectedWorkHouse);
@@ -1263,12 +1299,22 @@ export function ImplementingAgencyDashboard() {
               </button>
             </div>
 
-            <div className="bg-[#F8F9FA] p-3 rounded border border-[#E9ECEF] text-xs space-y-1.5">
+            <div className="bg-[#F8F9FA] p-3 rounded border border-[#E9ECEF] text-xs space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[#747780]">Complaint ID: <strong className="font-mono text-[#00204a]">{selectedAgencyComplaint.complaintId}</strong></span>
                 <span className="text-[#747780]">Work ID: <strong className="font-mono text-[#0066CC]">{selectedAgencyComplaint.workId}</strong></span>
               </div>
               <p className="font-semibold text-[#000a1f]">{selectedAgencyComplaint.workDescription}</p>
+
+              {/* Citizen & District Ground Evidence Viewer */}
+              <div className="pt-1">
+                <EvidenceMediaViewer
+                  items={agencyComplaintEvidence}
+                  title="Citizen & Prior Role Proofs"
+                  emptyMessage="No media files attached to this grievance enquiry."
+                  allowDownload={true}
+                />
+              </div>
             </div>
 
             {agencySuccessMsg && (
@@ -1694,9 +1740,38 @@ export function ImplementingAgencyDashboard() {
 
                       {/* Upload Form */}
                       <form onSubmit={handleAttachEvidence} className="p-4 bg-[#F8F9FA] rounded border border-[#CED4DA] space-y-3">
-                        <span className="text-xs font-bold text-[#00204a] uppercase tracking-wider block">
-                          Attach New Supporting Proof
-                        </span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#00204a] uppercase tracking-wider block">
+                            Attach New Supporting Proof (Any Format)
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            Max 25MB · Photos, Videos, Audio, PDFs, Docs, Archives
+                          </span>
+                        </div>
+
+                        {/* File Picker */}
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-[#000a1f]">
+                            Select Media / Document File:
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              setSelectedEvidenceFile(file);
+                              if (file && !evidenceFileName) {
+                                setEvidenceFileName(file.name);
+                              }
+                            }}
+                            className="w-full px-3 py-2 text-xs border border-[#CED4DA] rounded bg-white file:mr-3 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-[#00204a] file:text-white hover:file:bg-[#003366] cursor-pointer"
+                          />
+                          {selectedEvidenceFile && (
+                            <p className="text-[11px] text-emerald-700 font-medium">
+                              Selected: {selectedEvidenceFile.name} ({(selectedEvidenceFile.size / (1024 * 1024)).toFixed(2)} MB)
+                            </p>
+                          )}
+                        </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                           <div>
@@ -1718,10 +1793,13 @@ export function ImplementingAgencyDashboard() {
                               className="w-full p-2 bg-white border border-[#CED4DA] rounded outline-none"
                             >
                               <option value="Site Progress Photograph">Site Progress Photograph (Geo-Tagged)</option>
+                              <option value="Site Inspection Video">Site Drone / Progress Inspection Video</option>
+                              <option value="Audio Voice Recording">Field Engineer Audio Memo / Sound Measurement</option>
                               <option value="Measurement Book Copy">Measurement Book (MB) Entry Copy</option>
                               <option value="Stage Completion Certificate">Stage Completion Certificate</option>
                               <option value="Quality Inspection Certificate">Quality & Material Test Certificate</option>
                               <option value="Handover Document">Handover / Utilization Certificate</option>
+                              <option value="Archive / CAD Drawing">Engineering Drawings / Zip Archive</option>
                             </select>
                           </div>
                         </div>
@@ -1741,45 +1819,31 @@ export function ImplementingAgencyDashboard() {
                           <button
                             type="submit"
                             disabled={evidenceSubmitting}
-                            className="btn-primary text-xs py-1.5 px-4 font-bold flex items-center gap-1.5"
+                            className="btn-primary text-xs py-1.5 px-4 font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                           >
                             <Upload size={13} /> Record Evidence Entry
                           </button>
                         </div>
                       </form>
 
-                      {/* Evidence List */}
-                      <div className="space-y-2">
-                        <h5 className="text-xs font-bold text-[#000a1f] uppercase tracking-wider">
-                          Attached Records ({workspaceData.evidence?.length || 0})
-                        </h5>
-                        {workspaceData.evidence?.length === 0 ? (
-                          <div className="p-6 text-center text-[#747780] bg-slate-50 rounded border border-[#E9ECEF]">
-                            No supporting evidence documents attached yet for this project.
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {workspaceData.evidence.map((item: ExecutionEvidence) => (
-                              <div
-                                key={item.id}
-                                className="p-3 bg-white rounded border border-[#E9ECEF] flex items-center justify-between gap-3 text-xs"
-                              >
-                                <div className="flex items-center gap-2.5">
-                                  <Paperclip size={16} className="text-[#00204a]" />
-                                  <div>
-                                    <div className="font-bold text-[#000a1f]">{item.file_name}</div>
-                                    <div className="text-[10px] text-[#747780]">
-                                      {item.file_type} · Attached on {new Date(item.created_at).toLocaleDateString()}
-                                    </div>
-                                  </div>
-                                </div>
-                                <span className="text-[10px] font-mono bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                                  Verified Storage
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                      {/* Evidence List via Universal Viewer */}
+                      <div className="space-y-2 pt-2">
+                        <EvidenceMediaViewer
+                          items={(workspaceData.evidence || []).map((item: ExecutionEvidence) => ({
+                            id: item.id,
+                            fileName: item.file_name,
+                            fileType: item.file_type || 'application/octet-stream',
+                            fileSize: item.file_size_bytes || 0,
+                            storagePath: item.storage_path || '',
+                            description: item.description || '',
+                            uploadedBy: item.uploaded_by || agencyName,
+                            uploaderRole: 'Implementing Agency',
+                            createdAt: item.created_at,
+                          }))}
+                          title={`Attached Evidence Dossier (${workspaceData.evidence?.length || 0})`}
+                          emptyMessage="No supporting ground proof documents attached yet for this project."
+                          allowDownload={true}
+                        />
                       </div>
                     </div>
                   )}
