@@ -13,11 +13,19 @@ console.log('[Build] Target frontend directory:', frontendDir);
 console.log('[Build] Building frontend production bundle...');
 
 try {
-  // 1. Install frontend dependencies
-  execSync('npm install', { cwd: frontendDir, stdio: 'inherit' });
+  // 1. Install frontend dependencies including dev tools
+  execSync('npm install --include=dev', {
+    cwd: frontendDir,
+    stdio: 'inherit',
+    env: { ...process.env, NODE_ENV: 'development' },
+  });
 
-  // 2. Build frontend production assets
-  execSync('npm run build', { cwd: frontendDir, stdio: 'inherit' });
+  // 2. Build frontend production assets with Vite
+  execSync('npx vite build', {
+    cwd: frontendDir,
+    stdio: 'inherit',
+    env: { ...process.env, NODE_ENV: 'production' },
+  });
 
   // 3. Ensure target dist directory in backend exists
   if (fs.existsSync(targetDistDir)) {
