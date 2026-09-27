@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://thwixsmvuydalebgkbqj.supabase.co';
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'sb_publishable_ewwhGR_eBDSRa0qXXJmw_Q_9G0jQWYW';
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRod2l4c212dXlkYWxlYmdrYnFqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQwNzk0NzAsImV4cCI6MjA5OTY1NTQ3MH0.CPT_auIOz0C9vzYIUnLGaXXkbJGaOWvK45GN7TBfdwQ';
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   console.warn('[SupabaseService] Warning: SUPABASE_URL or SUPABASE_KEY is missing. Requests may fail.');
